@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Collectio</string>
+    <string name="title_activity_main">Collectio</string>
+    <string name="package_name">com.collectio.app</string>
+    <string name="custom_url_scheme">com.collectio.app</string>
+</resources>
