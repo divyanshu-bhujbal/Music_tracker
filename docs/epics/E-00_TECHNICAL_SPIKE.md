@@ -1,6 +1,12 @@
-# E-00: Technical Spike
+# E-00: Technical Spike — ARCHIVED
 
-**Phase:** 0 (Weeks 1–2) | **Type:** Validation | **Depends On:** — | **Blocks:** Everything
+> **Status:** COMPLETED. Outcome: Option A (React Native + RNW) rejected.
+> **Architecture Decision:** Escalated to Option D (Electron + Capacitor). See PROJECT_CONSTITUTION.md v1.1.
+> **Date Completed:** 2026-06-17
+> **Result Summary:** 6 of 7 tasks passed. T-00.1 (SQLite FK enforcement via react-native-sqlite-storage on RNW) failed. The SQLite engine itself works — the issue is a binding-layer configuration gap in the package's RNW adapter.
+> **Preserved for Reference:** The spike deliverables for AES-GCM, Argon2id WASM, OAuth PKCE, keychain, and Drive API are reusable in the Electron + Capacitor architecture.
+
+**Phase:** 0 | **Type:** Validation | **Depends On:** — | **Blocks:** Everything
 
 ---
 
