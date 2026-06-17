@@ -2,12 +2,13 @@
 
 ## Personal Collection Manager
 
-### Version 1.0 — Architectural Foundation Document
+### Version 1.1 — Architectural Foundation Document
 
 **Classification:** Design Authority Document
-**Status:** Proposed
+**Status:** Adopted
 **Target Audience:** Implementation Agents, Technical Leads, Solo Developer
-**Date:** 2026-06-16
+**Date:** 2026-06-17
+**Revision:** v1.1 — Option A (React Native + RNW) abandoned after E-00 Technical Spike. Architecture revised to Electron (Windows) + Capacitor + React (Android). Database schema, sync model, security model, category framework, and all requirements are preserved.
 
 ---
 
@@ -52,18 +53,21 @@ The following requirements were absent from the product brief and have been reso
 
 ## Section 2 — Challenged Assumptions
 
-### CA-01: React Native for Windows is equivalent to React Native for Android
+### CA-01: Architecture Revision — React Native for Windows is not viable
 
-**This assumption is false and represents the highest-risk decision in the project.**
+**This assumption has been validated and confirmed by the E-00 Technical Spike.**
 
-React Native for Windows (RNW) is a Microsoft-maintained open-source project but its ecosystem maturity is significantly behind React Native for Android. Specific blockers identified:
+The E-00 spike executed 7 validation tasks on a React Native for Windows (RNW) scaffold. Results:
 
-- `@react-native-google-signin/google-signin` — **no Windows support**. Google Sign-In on Windows requires a custom PKCE browser-based implementation.
-- Argon2id native bindings — no pre-built Windows RNW package; must build from source or use a JS-only fallback (which is too slow for key derivation).
-- SQLite native modules — compatibility varies. `react-native-sqlite-storage` has documented Windows support; `@op-engineering/op-sqlite` requires validation.
-- Many popular UI component libraries have incomplete or broken Windows implementations.
+- **6 of 7 tasks passed:** SQLite reads/writes/CRUD, AES-256-GCM encrypt/decrypt, Argon2id key derivation (WASM, within budget), Google OAuth PKCE browser flow, `react-native-keychain` Windows Credential Manager read/write, and Google Drive REST API upload/download.
+- **1 of 7 tasks failed:** Foreign key enforcement via `react-native-sqlite-storage` on RNW. The `PRAGMA foreign_keys = ON` directive was not honored by the package bridge. The SQLite engine itself functions correctly (11/12 tests passed) — the issue is in the package's RNW binding layer.
 
-**The architecture must isolate all platform-specific code behind abstraction interfaces to allow Windows-specific implementations without affecting core logic.**
+The spike concluded that while the SQLite engine works, the package ecosystem gap creates disproportionate risk and complexity. After analysis, the architecture was revised to:
+
+- **Windows:** Electron — mature desktop framework with native Node.js SQLite (`better-sqlite3`), crypto, and OAuth support. Eliminates all RNW ecosystem risks.
+- **Android:** Capacitor + React (web) — wraps a web React app in a native WebView with Capacitor plugin access to SQLite, keychain, and OAuth. The same React web UI renders in both environments.
+
+**Platform-specific code remains isolated behind interfaces.** The pattern of abstraction identified in the original CA-01 is preserved — only the target platforms changed. Database schema, sync model, security model, category framework, and all functional requirements remain identical.
 
 ### CA-02: Full-database sync eliminates the need for record-level change tracking
 
@@ -105,13 +109,16 @@ Detailed risk analysis is in Section 20. Summary:
 
 | Risk ID | Description                                             | Severity | Mitigation                                                                                            |
 | ------- | ------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------- |
-| R-01    | RNW ecosystem gaps blocking key features                | Critical | Platform abstraction interfaces; Windows-specific implementations                                     |
-| R-02    | Google Sign-In has no RNW package                       | Critical | Custom PKCE browser flow for Windows; scoped behind auth interface                                    |
-| R-03    | Argon2id not available as RNW-native package            | High     | Evaluate `react-native-argon2` for Android; use WebAssembly fallback for Windows                      |
-| R-04    | Forgotten password → cloud backup unrecoverable         | Medium   | Accepted for V1. Local DBs on active devices remain accessible. Disclosed at setup. See Section 16.4. |
-| R-05    | Concurrent 4-device editing produces frequent conflicts | Medium   | Automated conflict resolution using Last-Write-Wins (LWW) ensures no UI blockers for edge cases.      |
-| R-06    | SQLite schema migrations across app versions            | Medium   | Versioned migration system from day one                                                               |
-| R-07    | Google OAuth token expiry during extended offline use   | Medium   | Graceful degradation; local operation always possible                                                 |
+| R-01    | Capacitor SQLite plugin reliability (community-maintained, not Capacitor core) | High     | Validate `@capacitor-community/sqlite` in Phase 0b spike. Fallback: custom Capacitor SQLite plugin.   |
+| R-02    | Argon2id WASM performance on low-end Android devices    | Medium   | Benchmark on minimum-spec device (API 26, 2GB RAM). Fallback: PBKDF2 with documented security tradeoff.|
+| R-03    | Electron app bundle size (~100MB+ with Chromium)        | Low      | Acceptable for Windows desktop. Mitigated by `electron-builder` compression.                          |
+| R-04    | Dual build pipeline complexity (electron-builder + Capacitor CLI) | Medium   | CI runs both in parallel. Documented as TD-08.                                                        |
+| R-05    | Forgotten password → cloud backup unrecoverable         | Medium   | Accepted for V1. Local DBs on active devices remain accessible. Disclosed at setup. See Section 16.4. |
+| R-06    | Concurrent 4-device editing produces frequent conflicts | Medium   | Automated conflict resolution using Last-Write-Wins (LWW) ensures no UI blockers for edge cases.      |
+| R-07    | SQLite schema migrations across app versions            | Medium   | Versioned migration system from day one                                                               |
+| R-08    | Google OAuth token expiry during extended offline use   | Medium   | Graceful degradation; local operation always possible                                                 |
+| R-09    | Android WebView version fragmentation (older WebView on API 26 devices) | Low      | WebView auto-updates via Play Store on Android 5+. Test on minimum spec.                              |
+| R-10    | Google Drive API rate limits                             | Very Low | Drive REST API limits are generous for single-user; exponential backoff on rate limit response        |
 
 ---
 
@@ -138,7 +145,7 @@ These are architectural decisions that are acceptable for V1 but will require re
 
 The Personal Collection Manager is a cross-platform, offline-first application for managing personal metadata collections. Version 1 delivers Songs management; the architecture is explicitly designed to accommodate Books, Movies, Games, and additional categories through software updates without requiring structural rewrites.
 
-The application runs on Windows and Android using a shared React Native codebase. Every device maintains a local SQLite database as the primary working store. Google Drive serves as the synchronization and encrypted backup layer. A master password, combined with the user's email address, derives the AES-256-GCM key used to encrypt the cloud copy of the database.
+The application runs on Windows and Android using a shared React (web) codebase — distributed via Electron on Windows and Capacitor + WebView on Android. Every device maintains a local SQLite database as the primary working store. Google Drive serves as the synchronization and encrypted backup layer. A master password, combined with the user's email address, derives the AES-256-GCM key used to encrypt the cloud copy of the database.
 
 The architecture prioritizes simplicity, reliability, and data integrity over engineering sophistication. Expected scale is one user, four devices, and up to 10,000 entries. No premature optimization is applied. Every component is selected to remain maintainable by a small team or solo developer.
 
@@ -306,116 +313,142 @@ A reliable, private, offline-capable personal catalogue that the user owns entir
 
 ## Section 9 — Architecture Options
 
-### Option A: React Native Bare Workflow + React Native for Windows
+### Option A: React Native Bare Workflow + React Native for Windows (ORIGINAL RECOMMENDATION — REJECTED)
 
-A single React Native project with the React Native for Windows (RNW) package added. All native modules must explicitly support both Android and Windows.
+A single React Native project with the React Native for Windows (RNW) package added. This was the original recommendation from the v1.0 constitution.
 
-**Pros:** Single codebase, single language (TypeScript), no abstraction layer between RN and RNW.
+**Pros:** Single codebase, single language (TypeScript).
 **Cons:** RNW ecosystem has critical gaps (Google Sign-In, Argon2, SQLite vary in support). Windows build toolchain requires Visual Studio.
+
+**Resolution:** The E-00 Technical Spike validated 6 of 7 critical capabilities but revealed a foreign key enforcement issue with `react-native-sqlite-storage` on RNW. The spike concluded that RNW ecosystem risk is disproportionately high. **Option A is rejected.**
 
 ### Option B: Expo Bare Workflow + React Native for Windows
 
 Expo Bare provides the Expo module ecosystem alongside full native code access. RNW is added on top.
 
-**Pros:** Access to well-maintained Expo modules; Expo's module system is well-architected.
-**Cons:** Expo does not officially target Windows. Expo modules written for iOS/Android may not have Windows implementations. The combination of Expo Bare + RNW is an unsupported configuration that creates maintenance burden.
-
-**This option is rejected.** Expo and RNW are parallel ecosystems that do not compose cleanly.
+**This option is rejected.** Expo does not officially target Windows. The combination of Expo Bare + RNW is an unsupported configuration.
 
 ### Option C: Electron (Windows) + React Native (Android) with Shared Logic Monorepo
 
-The application is split into two builds: an Electron app for Windows and a React Native app for Android. A shared TypeScript package contains all business logic, database access, sync engine, and UI components (using React).
+Electron for Windows and React Native for Android. A shared TypeScript package contains all business logic.
 
-**Pros:** Each platform uses a mature, well-supported stack. Electron has excellent SQLite, crypto, and OAuth support via Node.js. This eliminates all RNW ecosystem risks.
-**Cons:** Two build pipelines. Some native integration points differ (Electron uses Node.js APIs; React Native uses native modules). More complex monorepo setup.
+**Pros:** Mature ecosystems on both platforms. Electron has excellent SQLite, crypto, and OAuth via Node.js.
+**Cons:** Two separate UI rendering engines (web DOM vs. native). ~75-85% code sharing.
 
-### Option D: Flutter
+**Resolution:** Considered but superseded by Option D, which achieves higher code sharing by using a single React web UI on both platforms.
 
-A complete rewrite using Dart and Flutter, which supports Windows and Android natively as first-class targets.
+### Option D: Electron (Windows) + Capacitor + React (Android) — ADOPTED
 
-**Pros:** Excellent cross-platform support including Windows. Growing ecosystem. Strong performance.
-**Cons:** Dart is not TypeScript. The product brief specifies React Native. This option violates the stated requirement.
+A React web application packaged via Electron on Windows and Capacitor on Android. A shared TypeScript monorepo contains all business logic, data access, and UI components.
 
-**This option is rejected** as it contradicts the explicit requirement.
+**Pros:**
+- Single React web UI renders identically in Electron's `BrowserWindow` and Capacitor's `WebView`
+- 90–95% code sharing (domain + application + data + UI all shared)
+- Electron eliminates all RNW risks: native Node.js SQLite (`better-sqlite3`), crypto (`argon2`, `crypto`), OAuth (`google-auth-library`)
+- Capacitor provides native plugin access (SQLite, keychain, OAuth browser flow) for Android
+- Straightforward iOS path (Capacitor supports iOS as first-class target)
+- Mature, well-supported ecosystems on both platforms
+
+**Cons:**
+- Two build pipelines (electron-builder, Capacitor CLI)
+- Electron app bundle size (~100MB+ with Chromium)
+- Browser-based rendering departs from the original "React Native codebase" requirement
+- Capacitor SQLite plugin is community-maintained (not Capacitor core)
+
+**Resolution:** Adopted. The tradeoffs are acceptable. The E-00 spike eliminated Option A. Option D preserves the database schema, sync model, security model, category framework, and all functional requirements. A Phase 0b Capacitor ecosystem validation spike is required before full commitment.
+
+### Option E: Flutter
+
+A complete rewrite using Dart and Flutter.
+
+**This option is rejected.** Dart is not TypeScript. This option contradicts the stated requirement.
 
 ---
 
 ## Section 10 — Architecture Tradeoff Analysis
 
-| Dimension                  | Option A (RN + RNW)              | Option C (Electron + RN Monorepo)      |
-| -------------------------- | -------------------------------- | -------------------------------------- |
-| Code sharing               | ~90% shared                      | ~75-85% shared                         |
-| Windows ecosystem maturity | Low                              | High (Node.js)                         |
-| Android ecosystem maturity | High                             | High (React Native)                    |
-| Google Sign-In support     | Requires custom Windows impl     | Native on both (different libs)        |
-| SQLite support             | Needs validation on Windows      | Excellent (better-sqlite3 on Electron) |
-| Crypto / Argon2 support    | Needs native bridging on Windows | Native Node.js crypto + argon2         |
-| Build complexity           | High (Visual Studio required)    | Medium (two separate build pipelines)  |
-| Developer experience       | Single project                   | Monorepo with workspace packages       |
-| Risk level                 | High                             | Medium                                 |
-| Future iOS path            | Straightforward (add iOS to RN)  | Would require third project            |
+| Dimension                  | Option A (RN + RNW)              | Option C (Electron + RN)           | Option D (Electron + Capacitor) — ADOPTED |
+| -------------------------- | -------------------------------- | ---------------------------------- | ----------------------------------------- |
+| Code sharing               | ~90% (single RN codebase)        | ~75–85% (different UI engines)     | 90–95% (single React web UI on both)     |
+| Windows ecosystem maturity | Low (RNW)                        | High (Node.js)                     | High (Node.js)                            |
+| Android ecosystem maturity | High (React Native)              | High (React Native)                | Medium (Capacitor — community plugins)    |
+| Google Sign-In support     | Custom Windows PKCE              | Native on both (different libs)    | Native on both (PKCE; different libs)     |
+| SQLite support             | Needs validation on Windows      | Excellent (`better-sqlite3`)       | Excellent (`better-sqlite3` / Capacitor)  |
+| Crypto / Argon2 support    | WASM or native bridging          | Native Node.js crypto + argon2     | Native Node.js / WASM on Android          |
+| UI rendering               | Native (RN components)           | Split (web DOM + native)           | Web DOM on both platforms                 |
+| Build complexity           | High (Visual Studio)             | Medium (two pipelines)             | Medium (two pipelines)                    |
+| Future iOS path            | Straightforward (add iOS to RN)  | Requires third project             | Straightforward (add iOS Capacitor entry) |
+| Risk level                 | High                             | Medium                             | Medium (after Capacitor spike validation) |
 
 ---
 
-## Section 11 — Recommended Architecture
+## Section 11 — Adopted Architecture
 
-**Primary Recommendation: Option A (React Native Bare + React Native for Windows)**
+**Adopted Architecture: Electron (Windows) + Capacitor + React (Android)**
 
-The product brief explicitly requires a "shared React Native codebase." Option A honors this requirement. The risks are real but manageable through disciplined platform abstraction. Every platform-specific feature is implemented behind an interface that both Android and Windows fulfill — when a package supports only Android, a Windows-specific implementation is written for that interface.
-
-**Alternative Recommendation: Option C (Electron + React Native Monorepo)**
-
-If RNW ecosystem blockers prove insurmountable during the spike phase (the first 2-week development period should include platform validation), Option C provides a pragmatic path to delivery without violating the spirit of the cross-platform requirement. The shared business logic package would exceed 80% of the codebase.
-
-**Decision point:** A 2-week technical spike on Windows must validate the following before committing to the primary recommendation:
-
-1. SQLite native module runs on Windows (reads, writes, transactions, `PRAGMA foreign_keys = ON`)
-2. Argon2id is achievable on Windows (native or WASM) within the 3-second performance budget
-3. AES-256-GCM encryption pipeline works on Windows
-4. Google OAuth PKCE browser flow completes successfully on Windows
-5. `react-native-keychain` reads and writes in Windows Credential Manager
-6. Device row insertion in the `devices` table succeeds and is enforced as a prerequisite before any entity write
-7. Google Drive REST API: upload and download of a test file using the `drive.appdata` scope
-
-If any of these fail, escalate to Option C.
+The E-00 Technical Spike eliminated Option A. Option D was selected over Option C for its higher code sharing (single React web UI vs. separate RN UI) and simpler future iOS path.
 
 ### Architecture Layers
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                 PRESENTATION LAYER                  │
-│    React Native Components + React Navigation       │
-│    Category UI Modules (Songs, future: Books...)    │
-└─────────────────────────────────────────────────────┘
-                           │
-┌─────────────────────────────────────────────────────┐
-│               APPLICATION LAYER                     │
-│    Category Framework  │  Sync Engine               │
-│    Duplicate Detector  │  Conflict Resolver          │
-│    Search/Filter Engine│  Settings Manager           │
-└─────────────────────────────────────────────────────┘
-                           │
-┌─────────────────────────────────────────────────────┐
-│                DOMAIN LAYER                         │
-│    Category Definition Interface                    │
-│    Entity Models (Song, Artist, Language, ...)      │
-│    Repository Interfaces                            │
-└─────────────────────────────────────────────────────┘
-                           │
-┌──────────────────┬────────────────────────────────────┐
-│  DATA LAYER      │    PLATFORM SERVICES LAYER         │
-│  SQLite (local)  │  Auth Interface                    │
-│  Repository Impl │  SecureStorage Interface           │
-│  Migrations      │  CloudStorageProvider Interface    │
-│  Change Tracker  │  CryptoProvider Interface          │
-└──────────────────┴────────────────────────────────────┘
-                           │
-┌──────────────────────────────────────────────────────┐
-│            PLATFORM IMPLEMENTATIONS                  │
-│  Android: RN modules (keychain, google-signin, etc.) │
-│  Windows: Custom PKCE flow, native/WASM crypto, etc. │
-└──────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                   RENDERER (Web UI)                         │
+│    React Components + React Router                          │
+│    Category UI Modules (Songs, future: Books...)            │
+│    Runs in: Electron BrowserWindow / Capacitor WebView       │
+└─────────────────────────────────────────────────────────────┘
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│                 APPLICATION LAYER                           │
+│    Category Framework  │  Sync Engine                        │
+│    Duplicate Detector  │  Conflict Resolver                  │
+│    Search/Filter Engine│  Settings Manager                   │
+│    (Pure TypeScript — identical to original)                 │
+└─────────────────────────────────────────────────────────────┘
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│                  DOMAIN LAYER                                │
+│    Category Definition Interface                             │
+│    Entity Models (Song, Artist, Language, ...)              │
+│    Repository Interfaces                                     │
+│    (Unchanged from original)                                  │
+└─────────────────────────────────────────────────────────────┘
+                              │
+┌────────────────────┬──────────────────────────────────────────┐
+│    DATA LAYER      │      PLATFORM SERVICES LAYER            │
+│  SQLite (local)    │  Auth Interface                          │
+│  Repository Impl   │  SecureStorage Interface                 │
+│  Migrations        │  CloudStorageProvider Interface          │
+│  Change Tracker    │  CryptoProvider Interface                │
+│  (SQL unchanged)   │  (Interfaces unchanged)                  │
+└────────────────────┴──────────────────────────────────────────┘
+                              │
+┌──────────────────────────────────────────────────────────────┐
+│              PLATFORM IMPLEMENTATIONS                        │
+│                                                              │
+│  Electron (Windows)  │  Capacitor (Android)                  │
+│  • better-sqlite3    │  • @capacitor-community/sqlite        │
+│  • Node.js crypto    │  • Web Crypto API (SubtleCrypto)      │
+│  • argon2 (npm)      │  • argon2-wasm                        │
+│  • electron-store    │  • @capacitor/secure-storage           │
+│  • google-auth-lib   │  • @capacitor-community/oauth          │
+│  • electron APIs     │  • @capacitor/core plugins            │
+└──────────────────────────────────────────────────────────────┘
 ```
+
+### Pre-Commitment Validation (Phase 0b Capacitor Spike)
+
+Before full commitment to Capacitor for Android, the following must be validated:
+
+1. `@capacitor-community/sqlite` — full CRUD test suite including `PRAGMA foreign_keys = ON` enforcement
+2. Argon2id WASM key derivation completes in <3 seconds on mid-range 2022 Android device
+3. AES-256-GCM round-trip encrypt/decrypt via Web Crypto API (SubtleCrypto)
+4. `@capacitor/secure-storage` — store, retrieve, delete, survive app restart
+5. PKCE OAuth flow via `@capacitor/browser` — complete auth and receive tokens
+6. React web app renders in Android WebView — table view with 10,000 rows scrollable within 200ms
+7. `@tanstack/react-virtual` — virtualized row rendering for large datasets
+
+If any critical validation fails, reconsider Option C (Electron + React Native monorepo).
 
 ---
 
@@ -425,56 +458,58 @@ If any of these fail, escalate to Option C.
 
 | Component             | Technology                     | Notes                                         |
 | --------------------- | ------------------------------ | --------------------------------------------- |
-| Application framework | React Native (bare workflow)   | No Expo managed workflow                      |
-| Windows target        | React Native for Windows (RNW) | Microsoft maintained                          |
+| Application framework | React 18+ (web)                | Single React web UI on both platforms         |
+| Windows target        | Electron 30+                   | Desktop shell with Chromium renderer          |
+| Android target        | Capacitor 6+                   | Native WebView wrapper with plugin access     |
 | Language              | TypeScript (strict mode)       | All source code                               |
-| Navigation            | React Navigation 6             | Proven; supports both platforms               |
+| Navigation            | React Router v6+               | Web-standard routing across both platforms    |
 | State management      | Zustand                        | Lightweight; no boilerplate                   |
 | Async data / caching  | TanStack Query (React Query)   | Server-state analogue for local async queries |
 
 ### Data Layer
 
-| Component           | Technology                                  | Notes                                                          |
-| ------------------- | ------------------------------------------- | -------------------------------------------------------------- |
-| Local database      | SQLite                                      | Via `react-native-sqlite-storage` (documented Windows support) |
-| ORM / Query builder | None — raw SQL via typed repository pattern | Avoids ORM complexity for a simple schema                      |
-| Schema migrations   | Custom versioned migration runner           | Built in-house; lightweight                                    |
+| Component           | Technology (Electron)                       | Technology (Capacitor)                       | Notes                                                          |
+| ------------------- | ------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------- |
+| Local database      | SQLite via `better-sqlite3`                 | SQLite via `@capacitor-community/sqlite`     | Synchronous on Electron; async on Capacitor                    |
+| ORM / Query builder | None — raw SQL via typed repository pattern | Same                                         | Avoids ORM complexity for a simple schema                      |
+| Schema migrations   | Custom versioned migration runner           | Same                                         | Built in-house; identical SQL files on both platforms          |
 
 **Why not an ORM?** The schema is small and stable. An ORM adds a dependency, a learning curve, and generated SQL that is harder to audit. For 10,000 rows and ~10 tables, raw SQL in a typed repository is maintainable and transparent.
 
 ### Security
 
-| Component            | Technology                                                                                | Notes                                                                          |
-| -------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Key derivation       | Argon2id                                                                                  | `react-native-argon2` (Android); WASM fallback for Windows (validate in spike) |
-| Symmetric encryption | AES-256-GCM                                                                               | `react-native-quick-crypto` or platform native                                 |
-| Secure storage       | `react-native-keychain`                                                                   | Supports Android Keystore and Windows Credential Manager                       |
-| Google OAuth         | `@react-native-google-signin/google-signin` (Android); Custom PKCE browser flow (Windows) | Scoped behind AuthProvider interface                                           |
+| Component            | Technology (Electron)                                  | Technology (Capacitor)                           | Notes                                                                          |
+| -------------------- | ------------------------------------------------------ | ------------------------------------------------ | ------------------------------------------------------------------------------ |
+| Key derivation       | Argon2id via `argon2` npm package (native Node.js addon) | Argon2id via `argon2-wasm` (WebAssembly)         | Same parameters: 64MB / 3 iterations / 4 parallelism                           |
+| Symmetric encryption | AES-256-GCM via Node.js `crypto` built-in              | AES-256-GCM via Web Crypto API (`SubtleCrypto`)  | Same algorithm; different API surface                                           |
+| Secure storage       | `electron-store` + `safeStorage` (DPAPI encryption)    | `@capacitor/secure-storage` (Android Keystore)   | Both backed by OS-level secure enclaves                                         |
+| Google OAuth         | Custom PKCE flow with `google-auth-library`            | Custom PKCE flow with `@capacitor/browser`       | Scoped behind AuthProvider interface; same `drive.appdata` scope                |
 
 ### Cloud Integration
 
 | Component     | Technology            | Notes                                     |
 | ------------- | --------------------- | ----------------------------------------- |
 | Cloud storage | Google Drive REST API | `drive.appdata` scope; app-private folder |
-| HTTP client   | `fetch` (built-in)    | No additional HTTP library needed         |
+| HTTP client   | `fetch` (built-in)    | Available in both Electron and Capacitor WebView |
 
 ### UI Components
 
 | Component         | Technology                        | Notes                                                                  |
 | ----------------- | --------------------------------- | ---------------------------------------------------------------------- |
-| Component library | React Native Paper                | Material Design; reasonable RNW support                                |
-| Icons             | React Native Vector Icons         | Validate Windows support                                               |
-| Virtualized list  | FlashList (`@shopify/flash-list`) | High-performance list; validate Windows support; fall back to FlatList |
+| Component library | Material UI (MUI)                 | Mature React web component library; table, dialog, form, sidebar       |
+| Icons             | `@mui/icons-material`             | Full Material icon set                                                 |
+| Virtualized list  | `@tanstack/react-virtual`         | High-performance virtualized row rendering; validated on both platforms |
 
 ### Build and Tooling
 
 | Component       | Technology                          | Notes                                         |
 | --------------- | ----------------------------------- | --------------------------------------------- |
-| Package manager | pnpm                                | Workspace support for potential monorepo      |
+| Package manager | pnpm                                | Monorepo workspace support                    |
+| Bundler         | Vite                                | Fast HMR for renderer; Electron uses Vite output |
 | Linting         | ESLint + `@typescript-eslint`       | Strict rules                                  |
 | Formatting      | Prettier                            | Enforced on commit                            |
-| Testing         | Jest + React Native Testing Library | Unit and integration tests                    |
-| E2E testing     | Detox (Android)                     | Windows E2E testing is currently out of scope |
+| Testing         | Jest + React Testing Library (web)  | Unit and integration tests                    |
+| E2E testing     | Playwright                          | Tests Electron app + Capacitor web app         |
 
 ---
 
@@ -714,7 +749,7 @@ SYNC ALGORITHM:
 ### 15.4 Startup and Shutdown Sync
 
 - **Startup:** If online and a cloud database exists, a sync is performed before the main UI is shown. A progress indicator is displayed with a **Skip / Work Offline** button. Tapping Skip cancels the startup sync and loads the local database immediately. If sync fails for any reason, the app automatically falls back to the local database and shows a persistent warning in the sidebar.
-- **Shutdown:** If the database is dirty and online, an expedited sync is attempted. Platform-specific background task APIs are used where available (Android WorkManager, Windows Background Tasks). If shutdown sync fails, the dirty state persists for the next startup sync.
+- **Shutdown:** If the database is dirty and online, an expedited sync is attempted. Platform-specific lifecycle APIs are used where available (Electron `app.on('before-quit')` and `powerMonitor` on Windows; Capacitor `App.addListener('appStateChange')` on Android). If shutdown sync fails, the dirty state persists for the next startup sync.
 
 ### 15.5 Offline Operation
 
@@ -753,6 +788,8 @@ Out-of-scope threats: nation-state actors, server-side Google infrastructure com
 
 **Performance note:** 64 MB / 3 iterations on a mid-range 2022 Android device takes approximately 1–2 seconds. This is acceptable for an operation that occurs once per session. If performance is unacceptable on minimum-spec hardware, reduce memory to 32 MB and increase iterations to 4.
 
+**Platform implementations:** Electron uses the `argon2` npm package (native Node.js addon, sub-500ms on typical hardware). Capacitor uses `argon2-wasm` loaded in the WebView's JavaScript engine; WASM performance must be validated on minimum-spec Android devices during the Phase 0b spike.
+
 ### 16.3 Database Encryption
 
 **Algorithm:** AES-256-GCM
@@ -781,6 +818,8 @@ The authentication tag, verified during decryption, provides two guarantees:
 
 A failed authentication tag means the decryption was rejected, fulfilling FR-AUTH-04.
 
+**Platform implementations:** Electron uses Node.js `crypto.createCipheriv('aes-256-gcm', ...)` and `crypto.randomBytes(12)` for nonce generation. Capacitor uses the Web Crypto API `crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, ...)`. Both produce identical on-wire ciphertexts given the same key and nonce.
+
 ### 16.4 Password Recovery — Out of Scope for V1
 
 Password recovery is not implemented in Version 1.
@@ -804,9 +843,9 @@ A future version may add a Recovery Key — a locally-generated random 256-bit v
 | Credential                    | Storage Mechanism                                                                                                                                                   |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Master password               | **Never stored.** Used only during key derivation; discarded immediately after the derived key is produced.                                                         |
-| Derived key (AES-256-GCM key) | Stored in platform secure storage after first authentication (Android Keystore via `react-native-keychain`; Windows Credential Manager via `react-native-keychain`) |
+| Derived key (AES-256-GCM key) | Stored in platform secure storage after first authentication (Electron: `electron-store` with `safeStorage` DPAPI encryption; Capacitor: `@capacitor/secure-storage` Android Keystore) |
 | Argon2id salt                 | Stored in local `app_metadata` table (`kdf_salt` key); not sensitive; required for key re-derivation during credential restore flow                                 |
-| Google OAuth refresh token    | Stored in platform secure storage (same keychain entry group as derived key)                                                                                        |
+| Google OAuth refresh token    | Stored in platform secure storage (same entry group as derived key)                                                                                                |
 | Google OAuth access token     | Held in application memory only; refreshed from refresh token as needed                                                                                             |
 
 ### 16.6 Google OAuth Design
@@ -815,16 +854,18 @@ A future version may add a Recovery Key — a locally-generated random 256-bit v
 
 This scope restricts the app to a hidden, app-specific folder in Google Drive. The user's other Drive files are not accessible. This is the most privacy-preserving scope that meets the synchronization requirement.
 
-**Android flow:** `@react-native-google-signin/google-signin` — standard implementation.
+**Android flow:** Custom PKCE (Proof Key for Code Exchange) flow using `@capacitor/browser` for OAuth consent screen and `App.addListener('appUrlOpen')` for redirect handling.
 
-**Windows flow:** Custom PKCE (Proof Key for Code Exchange) flow:
+**Windows flow:** Custom PKCE flow using `electron.shell.openExternal()` for the system browser and `app.setAsDefaultProtocolClient('collectio')` for URI scheme registration.
+
+**Common PKCE steps (both platforms):**
 
 1. Generate a cryptographically random `code_verifier`
 2. Compute `code_challenge = BASE64URL(SHA-256(code_verifier))`
 3. Open the system browser with the Google authorization URL
 4. Register a custom URI scheme (e.g., `collectio://oauth`) to receive the authorization code
 5. Exchange the authorization code for tokens using `code_verifier`
-6. Store refresh token in Windows Credential Manager
+6. Store refresh token in platform secure storage
 
 No client secret is involved. PKCE is the correct OAuth 2.0 flow for public clients (mobile and desktop apps).
 
@@ -988,19 +1029,21 @@ Collapsed by default. A single icon strip on the left edge. Expands on tap/click
 
 ### 18.7 Platform-Specific UI Considerations
 
-**Windows (Desktop):**
+**Windows (Desktop via Electron):**
 
 - Wider default column widths
 - Hover states on rows
-- Right-click context menu on rows (Edit, Delete, Copy Name)
-- Keyboard shortcuts: Ctrl+N (new), Delete (delete selected), Ctrl+F (focus search), Escape (deselect/close dialog)
+- Right-click context menu on rows (Edit, Delete, Copy Name) via Electron `Menu.buildFromTemplate()`
+- Keyboard shortcuts: Ctrl+N (new), Delete (delete selected), Ctrl+F (focus search), Escape (deselect/close dialog) via Electron `globalShortcut` API
+- Native OS window chrome, title bar, notifications via Electron APIs
 
-**Android (Mobile):**
+**Android (Mobile via Capacitor WebView):**
 
 - Touch targets minimum 48×48dp
 - Bottom sheet used in place of popovers where appropriate
-- Back gesture closes dialogs
-- Pull-to-refresh triggers manual sync
+- Back gesture handled by Capacitor `App.addListener('backButton')`
+- Pull-to-refresh via browser touch events + overscroll behavior
+- Native status bar and safe area handling via Capacitor plugins
 
 ---
 
@@ -1069,16 +1112,18 @@ No changes to any existing file are required except registering the category def
 
 | Risk ID | Description                                              | Probability | Impact | Severity | Mitigation                                                                                                            |
 | ------- | -------------------------------------------------------- | ----------- | ------ | -------- | --------------------------------------------------------------------------------------------------------------------- |
-| R-01    | RNW package ecosystem gaps                               | High        | High   | Critical | Platform abstraction interfaces; spike validation in week 1–2; Option C as fallback                                   |
-| R-02    | Google Sign-In has no RNW package                        | High        | High   | Critical | Custom PKCE browser flow designed for Windows; scope behind AuthProvider interface                                    |
-| R-03    | Argon2id not available as RNW-native package for Windows | High        | Medium | High     | Evaluate WASM fallback; if unacceptable performance, use PBKDF2 as Windows-only fallback (document security tradeoff) |
-| R-04    | SQLite native module not working on Windows              | Medium      | High   | High     | Validate `react-native-sqlite-storage` in week 1; identify alternative if needed                                      |
+| R-01    | Capacitor SQLite plugin reliability (community-maintained, not Capacitor core) | Medium | High | High | Validate `@capacitor-community/sqlite` in Phase 0b spike. Fallback: custom Capacitor SQLite plugin (2–3 days).        |
+| R-02    | Argon2id WASM performance on low-end Android devices     | Medium      | Medium | Medium   | Benchmark on API 26 / 2GB RAM device. Fallback: PBKDF2 with documented security tradeoff.                              |
+| R-03    | Electron app bundle size (~100MB+ minimum with Chromium) | Low         | Low    | Low      | Acceptable for Windows desktop distribution. Mitigated by `electron-builder` compression.                              |
+| R-04    | Dual build pipeline complexity (electron-builder + Capacitor CLI) | Medium | Medium | Medium | CI runs both pipelines in parallel. Documented as TD-08.                                                              |
 | R-05    | Forgotten password → cloud backup unrecoverable          | Low         | Medium | Medium   | Accepted for V1. Local DBs on active devices remain accessible. Risk disclosed at initial setup. See Section 16.4.    |
-| R-06    | Frequent conflicts across 4 simultaneous devices         | Medium      | Medium | Medium   | Conflict resolution UI is a first-class feature; conflict is expected, not exceptional                                |
+| R-06    | Frequent conflicts across 4 simultaneous devices         | Medium      | Medium | Medium   | Automated conflict resolution using Last-Write-Wins (LWW) ensures no UI blockers for edge cases.                      |
 | R-07    | Schema migration failure on upgrade                      | Low         | High   | High     | Versioned migrations with rollback points; test on real devices before release                                        |
 | R-08    | Google OAuth token expiry during extended offline use    | Medium      | Low    | Low      | Graceful degradation; local operation always possible; re-auth prompt on next sync attempt                            |
 | R-09    | Full-database upload performance on slow connections     | Low         | Low    | Low      | Expected DB size: <5MB; 5MB upload acceptable on 3G+                                                                  |
 | R-10    | Google Drive API rate limits                             | Very Low    | Low    | Low      | Drive REST API limits are generous for single-user; exponential backoff on rate limit response                        |
+| R-11    | Android WebView version fragmentation (older WebView on API 26) | Low    | Low    | Low      | WebView auto-updates via Play Store on Android 5+. Test on minimum spec.                                               |
+| R-12    | Browser-based rendering performance for large tables     | Medium      | Medium | Medium   | Virtualized rendering via `@tanstack/react-virtual`. Validate 10k row performance in Phase 0b spike.                  |
 
 ---
 
@@ -1093,40 +1138,47 @@ No changes to any existing file are required except registering the category def
 | TD-05 | English-only UI strings                 | Low                                                | Internationalization requirement                 | 2–3 weeks                                   |
 | TD-06 | No password recovery path in V1         | Medium                                             | First cloud-only data loss incident              | 1–2 weeks; see Section 16.4 for future path |
 | TD-07 | No E2E test coverage on Windows         | Medium                                             | Bug found only on Windows                        | 1–2 weeks to establish Windows E2E pipeline |
+| TD-08 | Electron build size overhead            | Low                                                | None (acceptable for desktop distribution)        | n/a                                         |
 
 ---
 
 ## Section 22 — Development Roadmap
 
-### Phase 0: Technical Spike (Weeks 1–2)
+### Phase 0: Technical Spike (Weeks 1–2) — COMPLETED
 
-**Goal:** Validate the primary architecture on Windows before committing to it.
+**Goal:** Validate the primary architecture (Option A: React Native + RNW) on Windows before committing to it.
+
+**Outcome:** 6 of 7 validations passed. Foreign key enforcement via `react-native-sqlite-storage` on RNW failed. Architecture escalated to Electron + Capacitor.
+
+### Phase 0b: Capacitor Validation Spike (Week 3)
+
+**Goal:** Validate Capacitor ecosystem for Android before full commitment to Option D.
 
 **Deliverables:**
 
-- SQLite reads and writes in a RNW app on Windows (including transactions and `PRAGMA foreign_keys = ON`)
-- Argon2id key derivation completes in <3 seconds on a test Windows machine
-- AES-256-GCM encrypt/decrypt of a small file on Windows
-- Google OAuth PKCE browser flow completes and returns an access token on Windows
-- `react-native-keychain` reads and writes in Windows Credential Manager
-- Device row can be inserted into the `devices` table as a prerequisite; foreign key constraint enforcement verified
-- Google Drive REST API: upload and download of a test file using the `drive.appdata` scope
+- `@capacitor-community/sqlite` — full CRUD including `PRAGMA foreign_keys = ON` on Android device
+- Argon2id WASM key derivation completes in <3 seconds on mid-range Android device
+- AES-256-GCM round-trip encrypt/decrypt via Web Crypto API (SubtleCrypto)
+- `@capacitor/secure-storage` — store, retrieve, delete, survive app restart
+- PKCE OAuth flow via `@capacitor/browser` — complete auth and receive tokens
+- React web app renders in Android WebView — table view with 10,000 rows within 200ms
+- `@tanstack/react-virtual` — virtualized row rendering for large datasets
 
-**Decision point:** If any of the above fail and cannot be remediated within the spike, the project escalates to Option C (Electron + React Native monorepo).
+**Decision point:** If any critical validation fails and cannot be remediated, reconsider Option C (Electron + React Native monorepo).
 
-### Phase 1: Foundation — Milestone M0 (Weeks 3–6)
+### Phase 1: Foundation — Milestone M0 (Weeks 4–7)
 
-Infrastructure, database layer, auth skeleton, security primitives.
+Infrastructure, database layer, auth skeleton, security primitives. pnpm monorepo with Electron + Capacitor.
 
-### Phase 2: Alpha — Milestone M1 (Weeks 7–12)
+### Phase 2: Alpha — Milestone M1 (Weeks 8–13)
 
 Songs category fully functional locally. No sync. Usable for daily use as a local-only app.
 
-### Phase 3: Beta — Milestone M2 (Weeks 13–18)
+### Phase 3: Beta — Milestone M2 (Weeks 14–19)
 
 Synchronization working between two devices. Conflict resolution UI functional. Backup strategy implemented.
 
-### Phase 4: V1.0 — Milestone M3 (Weeks 19–24)
+### Phase 4: V1.0 — Milestone M3 (Weeks 20–25)
 
 Full feature set. Tested on all target platforms. Trash, recovery, all sync edge cases handled.
 
@@ -1136,23 +1188,24 @@ Full feature set. Tested on all target platforms. Trash, recovery, all sync edge
 
 | Epic ID | Title                      | Description                                                               | Depends On |
 | ------- | -------------------------- | ------------------------------------------------------------------------- | ---------- |
-| E-00    | Technical Spike            | Validate platform capabilities before commitment                          | —          |
-| E-01    | Project Infrastructure     | Repository setup, CI, linting, toolchain                                  | E-00       |
-| E-02    | Database Layer             | SQLite integration, migration runner, repository pattern                  | E-01       |
-| E-03    | Security Primitives        | Argon2id KDF, AES-256-GCM encrypt/decrypt, key management                 | E-01       |
-| E-04    | Platform Services          | Auth interface, secure storage, Google OAuth implementations per platform | E-03       |
+| E-00    | Technical Spike            | Validate Option A (RN+RNO) on Windows before commitment. COMPLETED — Option A rejected. | —          |
+| E-00b   | Capacitor Validation Spike | Validate Capacitor ecosystem for Android before committing to Option D    | E-00       |
+| E-01    | Project Infrastructure     | pnpm monorepo setup, CI, linting, Electron + Capacitor toolchain          | E-00b      |
+| E-02    | Database Layer             | SQLite via better-sqlite3 (Electron) + @capacitor-community/sqlite (Android); migration runner | E-01       |
+| E-03    | Security Primitives        | Argon2id via argon2 npm / argon2-wasm; AES-GCM via Node.js crypto / SubtleCrypto | E-01       |
+| E-04    | Platform Services          | Auth, secure storage, OAuth via electron-store / @capacitor plugins       | E-03       |
 | E-05    | Category Framework         | CategoryDefinition interface, CategoryRegistry, core app hooks            | E-02       |
-| E-06    | Songs Category — Data      | Songs, Artists, Albums, Languages migrations and repositories             | E-05       |
-| E-07    | Songs Category — UI        | Table view, tile view, detail/edit/create dialogs, duplicate detection UI | E-06       |
+| E-06    | Songs Category — Data      | Songs, Artists, Languages migrations and repositories (SQL unchanged)     | E-05       |
+| E-07    | Songs Category — UI        | Table view, tile view, dialogs, duplicate detection via MUI + React Router | E-06       |
 | E-08    | Search and Filter Engine   | Global search, column filters, sort logic                                 | E-07       |
-| E-09    | Cloud Storage Layer        | Google Drive API wrapper, CloudStorageProvider interface                  | E-04       |
-| E-10    | Synchronization Engine     | LWW sync algorithm, state tracking, drive integration                     | E-09, E-02 |
-| E-12    | Trash and Recovery         | Soft delete, trash screen, restore action, retention purge                | E-07       |
+| E-09    | Cloud Storage Layer        | Google Drive API wrapper via fetch; CloudStorageProvider interface         | E-04       |
+| E-10    | Synchronization Engine     | LWW sync algorithm, state tracking, drive integration                      | E-09, E-02 |
+| E-12    | Trash and Recovery         | Soft delete, trash screen, restore action                                  | E-07       |
 | E-13    | Backup System              | Recovery documentation, fallback scenarios                                | E-10       |
-| E-14    | Settings and Configuration | SettingsScreen, app_settings persistence, session policy configuration    | E-02       |
-| E-15    | UI Shell                   | Navigation structure, sidebar, layout, platform-specific adaptations      | E-01       |
-| E-16    | Testing and QA             | Unit tests, integration tests, manual test plan, bug fixes                | All        |
-| E-17    | Release Preparation        | App signing, distribution packaging, user documentation                   | E-16       |
+| E-14    | Settings and Configuration | SettingsScreen, app_settings persistence                                   | E-02       |
+| E-15    | UI Shell                   | React Router navigation, MUI sidebar, layout, platform adaptations        | E-01       |
+| E-16    | Testing and QA             | Jest + RTL (web) + Playwright E2E; manual test plan                       | All        |
+| E-17    | Release Preparation        | electron-builder packaging, Play Store signing, user documentation         | E-16       |
 
 ---
 
@@ -1212,15 +1265,15 @@ The critical path runs through the category framework and conflict resolution UI
 
 ### M0: Foundation Complete
 
-**Target:** End of Phase 1 (Week 6)
+**Target:** End of Phase 1 (Week 7)
 
 **Criteria:**
 
-- [ ] Technical spike validated (or Option C decision made)
-- [ ] Project repository with CI running lint and tests on every commit
-- [ ] SQLite migration runner working on both platforms
+- [ ] Capacitor ecosystem validated (E-00b pass)
+- [ ] Project monorepo with CI running lint and tests on every commit
+- [ ] SQLite migration runner working on both Electron (better-sqlite3) and Capacitor (@capacitor-community/sqlite)
 - [ ] Argon2id + AES-256-GCM encrypt/decrypt pipeline working on both platforms
-- [ ] Secure storage read/write working on both platforms
+- [ ] Secure storage read/write working on both platforms (electron-store / @capacitor/secure-storage)
 - [ ] Google OAuth completes on both platforms
 - [ ] CategoryRegistry exists with zero categories registered
 
@@ -1287,7 +1340,7 @@ A single task is considered done when:
 1. **Implemented:** The feature or fix is complete according to its acceptance criteria
 2. **Self-reviewed:** The developer has re-read the diff and checked for obvious errors
 3. **Tested:** Unit tests cover the happy path and at least one failure path; all existing tests still pass
-4. **Platform verified:** The feature works on both Android and Windows (or the deviation is documented and accepted)
+4. **Platform verified:** The feature works on both Capacitor (Android WebView) and Electron (Windows) (or the deviation is documented and accepted)
 5. **No new lint errors:** ESLint and TypeScript strict mode produce no new warnings or errors
 6. **No hardcoded data:** No magic strings, no hardcoded platform conditionals outside the platform service layer
 
@@ -1351,13 +1404,13 @@ The following items are flagged as requiring a decision before implementation be
 
 These interfaces are defined during implementation but their existence is mandated by this constitution.
 
-| Interface               | Implemented By (V1)                                      | Purpose                                   |
-| ----------------------- | -------------------------------------------------------- | ----------------------------------------- |
-| `CloudStorageProvider`  | `GoogleDriveProvider`                                    | Upload/download/list cloud database files |
-| `AuthProvider`          | `GoogleAuthProviderAndroid`, `GoogleAuthProviderWindows` | OAuth flow, token management              |
-| `CryptoProvider`        | `NativeCryptoProvider` (platform-native or WASM)         | KDF, encrypt, decrypt                     |
-| `SecureStorageProvider` | `KeychainStorageProvider`                                | Read/write platform secure storage        |
-| `CategoryDefinition`    | `SongsCategory`                                          | Per-category schema, UI, and logic        |
+| Interface               | Implemented By (V1)                                                    | Purpose                                   |
+| ----------------------- | ---------------------------------------------------------------------- | ----------------------------------------- |
+| `CloudStorageProvider`  | `GoogleDriveProvider`                                                  | Upload/download/list cloud database files |
+| `AuthProvider`          | `ElectronAuthProvider`, `CapacitorAuthProvider`                        | OAuth flow, token management              |
+| `CryptoProvider`        | `NodeCryptoProvider` (Electron), `WebCryptoProvider` (Capacitor)       | KDF, encrypt, decrypt                     |
+| `SecureStorageProvider` | `ElectronStorageProvider`, `CapacitorStorageProvider`                  | Read/write platform secure storage        |
+| `CategoryDefinition`    | `SongsCategory`                                                        | Per-category schema, UI, and logic        |
 
 ---
 
@@ -1370,6 +1423,6 @@ Users may add languages not in this list. User-added languages are stored in the
 
 ---
 
-_End of Project Constitution v1.0_
+_End of Project Constitution v1.1_
 
 _This document is a living artifact. Any decision made during implementation that deviates from the constitution must be recorded here with a rationale before the deviation is committed to code._

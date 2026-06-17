@@ -1,6 +1,7 @@
 # Folder Structure
 
-> Inferred from PROJECT_CONSTITUTION.md architecture layers (Section 11), technology stack (Section 12), and interface contracts (Appendix B).
+> Inferred from PROJECT_CONSTITUTION.md v1.1 architecture layers (Section 11), technology stack (Section 12), and interface contracts (Appendix B).
+> Target: Electron + Capacitor pnpm monorepo.
 > The constitution defines layers and modules but not a specific directory layout.
 
 ---
@@ -11,201 +12,136 @@
 collectio/
 │
 ├── .husky/                              # Git hooks (Prettier + lint on commit)
-│   └── pre-commit
 │
-├── src/
+├── packages/                            # Monorepo workspace packages
 │   │
-│   ├── presentation/                    # LAYER 1: UI Components + Navigation
+│   ├── shared/                          # Pure TypeScript — ZERO platform code
+│   │   ├── src/
+│   │   │   ├── domain/
+│   │   │   │   ├── models/              # Song, Artist, Language, Device, etc.
+│   │   │   │   ├── interfaces/          # CategoryDefinition, IRepository, AuthProvider, etc.
+│   │   │   │   └── repositories/        # Repository interfaces (what, not how)
+│   │   │   │
+│   │   │   ├── application/
+│   │   │   │   ├── category/            # CategoryRegistry, hooks
+│   │   │   │   ├── sync/                # SyncEngine, ConflictResolver, ChangeTracker
+│   │   │   │   ├── search/              # SearchEngine, FilterEngine, SortEngine
+│   │   │   │   ├── duplicate/           # DuplicateDetector (normalization pipeline)
+│   │   │   │   └── settings/            # SettingsManager
+│   │   │   │
+│   │   │   └── data/
+│   │   │       ├── repositories/        # Repository implementations (raw SQL)
+│   │   │       ├── MigrationRunner.ts   # Versioned migration executor
+│   │   │       ├── QueryBuilder.ts      # Typed SQL helper
+│   │   │       └── migrations/          # SQL migration files
+│   │   │           ├── 001_core_infrastructure.sql
+│   │   │           └── 002_songs_category.sql
 │   │   │
-│   │   ├── navigation/
-│   │   │   ├── AppNavigator.tsx         # Auth flow vs. Main app conditional routing
-│   │   │   └── MainNavigator.tsx        # Tab/stack navigator for main app screens
-│   │   │
-│   │   ├── screens/
-│   │   │   ├── SetupScreen.tsx          # First-launch email + password + disclosure warning
-│   │   │   ├── UnlockScreen.tsx         # Credential restore flow (keychain cleared)
-│   │   │   ├── SettingsScreen.tsx       # Sync delay, theme, default view, toggles
-│   │   │   └── TrashScreen.tsx          # Soft-deleted items with restore action
-│   │   │
-│   │   ├── components/                  # Shared/reusable UI components
-│   │   │   ├── Sidebar.tsx              # Collapsible sidebar shell
-│   │   │   ├── SyncStatusPanel.tsx      # Sync icon, last sync time, pending count
-│   │   │   ├── CategoryNav.tsx          # Category list in sidebar
-│   │   │   ├── TableView.tsx            # Generic virtualized table (category-agnostic)
-│   │   │   ├── TileView.tsx             # Generic card grid (category-agnostic)
-│   │   │   ├── SearchBar.tsx            # Global search input with debounce
-│   │   │   ├── ColumnFilterPopover.tsx  # Per-column multi-select filter
-│   │   │   ├── SelectionModeBar.tsx     # Bulk action bar (Delete Selected, Clear)
-│   │   │   └── PlatformContextMenu.tsx  # Windows right-click menu / Android long-press
-│   │   │
-│   │   └── dialogs/
-│   │       ├── ItemDetailDialog.tsx     # Read-only detail view modal
-│   │       ├── ItemEditDialog.tsx       # Edit form modal
-│   │       ├── ItemCreateDialog.tsx     # Create form modal
-│   │       ├── DuplicateDetectionDialog.tsx  # Duplicate resolution options
-│   │       └── ConflictResolutionDialog.tsx  # Sync conflict display (future)
+│   │   ├── package.json
+│   │   └── tsconfig.json
 │   │
-│   ├── application/                     # LAYER 2: Business Logic Orchestration
+│   ├── renderer/                        # Shared React web UI
+│   │   ├── src/
+│   │   │   ├── screens/                 # Setup, Unlock, Settings, Trash screens
+│   │   │   ├── components/              # Sidebar, SyncStatusPanel, CategoryNav, TableView, TileView
+│   │   │   ├── dialogs/                 # All dialog components
+│   │   │   ├── navigation/              # React Router configuration
+│   │   │   ├── categories/
+│   │   │   │   └── songs/               # SongsCategory UI + duplicate detector
+│   │   │   └── hooks/                   # useActiveCategory, useSync, useSettings
 │   │   │
-│   │   ├── category/
-│   │   │   ├── CategoryRegistry.ts      # Static registry of all CategoryDefinitions
-│   │   │   ├── useActiveCategory.ts     # Zustand store for active category state
-│   │   │   └── useCategoryList.ts       # Hook to list enabled categories for sidebar
-│   │   │
-│   │   ├── sync/
-│   │   │   ├── SyncEngine.ts            # 14-step sync algorithm orchestrator
-│   │   │   ├── ConflictResolver.ts      # LWW merge logic + orphan FK resolution
-│   │   │   ├── ChangeTracker.ts         # Identifies local/remote changes by updated_at
-│   │   │   ├── DirtyStateTracker.ts     # Computes dirty flag and pending change count
-│   │   │   ├── SyncTimer.ts             # Inactivity timer management
-│   │   │   ├── SyncLock.ts              # In-memory mutex for concurrent sync prevention
-│   │   │   └── useSyncStore.ts          # Zustand store: sync state, logs, sidebar status
-│   │   │
-│   │   ├── search/
-│   │   │   ├── SearchEngine.ts          # Cross-field text search query builder
-│   │   │   ├── FilterEngine.ts          # Column filter composition (AND logic)
-│   │   │   └── SortEngine.ts            # Single-column sort with cycling (asc→desc→none)
-│   │   │
-│   │   ├── duplicate/
-│   │   │   └── DuplicateDetector.ts     # Name normalization pipeline + artist set comparison
-│   │   │
-│   │   └── settings/
-│   │       ├── SettingsManager.ts       # Read/write app_settings with defaults
-│   │       └── useSettingsStore.ts      # Zustand store for current settings values
+│   │   ├── package.json
+│   │   └── tsconfig.json
 │   │
-│   ├── domain/                          # LAYER 3: Pure TypeScript — No Platform Code
-│   │   │
-│   │   ├── models/
-│   │   │   ├── Song.ts                  # Song entity type
-│   │   │   ├── Artist.ts                # Artist entity type
-│   │   │   ├── Language.ts              # Language reference type
-│   │   │   ├── Category.ts              # Category reference type
-│   │   │   ├── Device.ts                # Device entity type
-│   │   │   ├── SyncLog.ts               # Sync log entry type
-│   │   │   ├── AppSetting.ts            # Setting key-value pair type
-│   │   │   └── Migration.ts             # Migration metadata type
-│   │   │
-│   │   ├── interfaces/
-│   │   │   ├── CategoryDefinition.ts    # Extension contract for all categories
-│   │   │   ├── CloudStorageProvider.ts  # Upload/download/list/delete cloud files
-│   │   │   ├── AuthProvider.ts          # OAuth flow + token management
-│   │   │   ├── CryptoProvider.ts        # KDF + encrypt + decrypt
-│   │   │   ├── SecureStorageProvider.ts # Read/write platform secure storage
-│   │   │   └── IRepository.ts           # Generic typed repository interface
-│   │   │
-│   │   └── repositories/                # Domain repository interfaces (what, not how)
-│   │       ├── IAppMetadataRepository.ts
-│   │       ├── IDeviceRepository.ts
-│   │       ├── ISyncLogRepository.ts
-│   │       ├── IAppSettingsRepository.ts
-│   │       ├── ILanguageRepository.ts
-│   │       ├── ICategoryRepository.ts
-│   │       ├── ISongRepository.ts
-│   │       ├── IArtistRepository.ts
-│   │       └── ISongArtistRepository.ts
-│   │
-│   ├── data/                            # LAYER 4a: Data Access Implementations
-│   │   │
-│   │   ├── database/
-│   │   │   ├── DatabaseConnection.ts    # Open/close, execute, query, transaction
-│   │   │   ├── MigrationRunner.ts       # Versioned migration execution at startup
-│   │   │   ├── QueryBuilder.ts          # Type-safe raw SQL query helper
-│   │   │   └── migrations/
-│   │   │       ├── 001_core_infrastructure.sql
-│   │   │       └── 002_songs_category.sql
-│   │   │
-│   │   └── repositories/                # Repository implementations (raw SQL)
-│   │       ├── AppMetadataRepository.ts
-│   │       ├── DeviceRepository.ts
-│   │       ├── SyncLogRepository.ts
-│   │       ├── AppSettingsRepository.ts
-│   │       ├── LanguageRepository.ts
-│   │       ├── CategoryRepository.ts
-│   │       ├── SongRepository.ts
-│   │       ├── ArtistRepository.ts
-│   │       └── SongArtistRepository.ts
-│   │
-│   ├── platform/                        # LAYER 4b + 5: Platforms Services + Implementations
-│   │   │
-│   │   │── android/
-│   │   │   ├── GoogleAuthProviderAndroid.ts     # @react-native-google-signin wrapper
-│   │   │   ├── NativeCryptoProvider.ts          # react-native-argon2 + react-native-quick-crypto
-│   │   │   └── KeychainStorageProvider.ts       # react-native-keychain (Android Keystore)
-│   │   │
-│   │   ├── windows/
-│   │   │   ├── GoogleAuthProviderWindows.ts     # Custom PKCE browser flow
-│   │   │   ├── WasmCryptoProvider.ts            # WASM Argon2id + SubtleCrypto AES-GCM
-│   │   │   ├── CredentialManagerStorage.ts      # react-native-keychain (Windows Credential Manager)
-│   │   │   └── CustomURISchemeHandler.ts        # Deep link handler for collectio://oauth
-│   │   │
-│   │   └── shared/
-│   │       ├── GoogleDriveProvider.ts           # Drive REST API v3 wrapper
-│   │       ├── TokenRefresher.ts                # Proactive token refresh with 5-min buffer
-│   │       └── network-monitor.ts               # Connectivity detection (online/offline)
-│   │
-│   └── categories/                     # Category implementations (plug-in modules)
+│   └── platform/                        # Platform adapters (thin layer)
+│       ├── src/
+│       │   ├── interfaces/              # Re-exports from shared (for DI)
+│       │   ├── electron/                # Electron implementations
+│       │   │   ├── ElectronAuthProvider.ts
+│       │   │   ├── NodeCryptoProvider.ts
+│       │   │   ├── ElectronStorageProvider.ts
+│       │   │   └── BetterSqlite3Connection.ts
+│       │   ├── capacitor/               # Capacitor implementations
+│       │   │   ├── CapacitorAuthProvider.ts
+│       │   │   ├── WebCryptoProvider.ts
+│       │   │   ├── CapacitorStorageProvider.ts
+│       │   │   └── CapacitorSqliteConnection.ts
+│       │   └── shared/                  # Works on both platforms
+│       │       ├── GoogleDriveProvider.ts
+│       │       └── NetworkMonitor.ts
 │       │
-│       └── songs/
-│           ├── index.ts                # Exports SongsCategory definition
-│           ├── SongsCategory.ts        # CategoryDefinition implementation
-│           ├── components/
-│           │   ├── SongsTable.tsx       # Songs-specific column config for TableView
-│           │   ├── SongsTile.tsx        # Songs-specific card for TileView
-│           │   ├── SongDetailDialog.tsx # Read-only song detail
-│           │   ├── SongEditDialog.tsx   # Edit song form
-│           │   └── SongCreateDialog.tsx # Create song form + duplicate detection
-│           ├── SongsDuplicateDetector.ts # Category-specific duplicate logic
-│           └── songs-columns.ts         # Column definitions for table view
+│       ├── package.json
+│       └── tsconfig.json
+│
+├── apps/
+│   ├── electron/                        # Electron app entry point
+│   │   ├── src/
+│   │   │   ├── main.ts                  # Electron main process: window, lifecycle, protocol
+│   │   │   └── preload.ts               # Context bridge for secure IPC
+│   │   ├── electron-builder.yml
+│   │   ├── package.json
+│   │   └── tsconfig.json
+│   │
+│   └── capacitor/                       # Capacitor app entry point
+│       ├── src/
+│       │   └── index.tsx                # React DOM render entry
+│       ├── android/                     # Generated by Capacitor CLI
+│       ├── capacitor.config.ts
+│       ├── package.json
+│       └── tsconfig.json
 │
 ├── assets/
-│   ├── fonts/                          # Custom fonts (if needed)
-│   └── icons/                          # App icons (android/ and windows/ subdirs)
-│
-├── android/                            # React Native Android project (auto-generated)
-│   └── app/
-│       └── build.gradle
-│
-├── windows/                            # React Native for Windows project (auto-generated)
-│   └── collectio/
-│       └── Package.appxmanifest
+│   ├── fonts/                           # Custom fonts
+│   └── icons/                           # App icons
 │
 ├── __tests__/
-│   ├── domain/                         # Tests matching domain/folder filenames
-│   ├── data/                           # Repository integration tests
-│   ├── application/                    # Sync engine, search, duplicate detection tests
-│   └── components/                     # React component tests
+│   ├── shared/                          # Domain + application layer tests
+│   ├── renderer/                        # React component tests
+│   └── platform/                        # Adapter integration tests
 │
-├── .eslintrc.js                        # ESLint configuration
-├── .prettierrc                         # Prettier configuration
-├── package.json                        # Dependencies and scripts
-├── tsconfig.json                       # TypeScript strict mode configuration
-├── babel.config.js                     # Babel configuration (RN)
-├── pnpm-lock.yaml                      # Lock file (pnpm)
-├── pnpm-workspace.yaml                 # Monorepo workspace config (future-proofing)
-├── react-native.config.js              # React Native CLI configuration
-├── .gitignore                          # Git ignore rules
-├── PROJECT_CONSTITUTION.md             # Design authority document
-├── docs/                               # Architecture & implementation docs
+├── docs/                                # Architecture documentation
 │   ├── 01_ARCHITECTURE.md
 │   ├── 02_DATABASE_SCHEMA.md
 │   ├── 03_SYNC_STATE_MACHINE.md
 │   ├── 04_MIGRATION_STRATEGY.md
-│   └── 05_FOLDER_STRUCTURE.md
-└── SPIKE_DECISION.md                   # E-00 Technical Spike pass/fail record
+│   ├── 05_FOLDER_STRUCTURE.md
+│   ├── ARCHITECTURE_REVISION.md
+│   └── epics/
+│       └── E-00_TECHNICAL_SPIKE.md
+│
+├── pnpm-workspace.yaml                  # Workspace configuration
+├── .eslintrc.js
+├── .prettierrc
+├── .gitignore
+├── PROJECT_CONSTITUTION.md
+└── package.json                         # Root package (workspace scripts)
 ```
 
 ---
 
-## 2. Layer-to-Directory Mapping
+## 2. Package-to-Layer Mapping
 
-| Architecture Layer | Directory | Allowed Imports | Forbidden Import Examples |
-|--------------------|-----------|-----------------|--------------------------|
-| Presentation | `src/presentation/` | `application/`, `domain/`, react, react-native | `data/`, `platform/` |
-| Application | `src/application/` | `domain/` | `data/`, `platform/`, `presentation/`, `categories/` |
-| Domain | `src/domain/` | _(nothing external)_ | Any `src/` subdirectory |
-| Data | `src/data/` | `domain/` | `application/`, `presentation/` |
-| Platform Services | `src/platform/` | `domain/`, react-native modules | `application/`, `presentation/`, `data/` |
-| Categories | `src/categories/` | `application/`, `domain/`, `presentation/` | `data/` (use repositories through domain interfaces), `platform/` |
+| Architecture Layer | Package | Allowed Imports | Forbidden Imports |
+|--------------------|---------|-----------------|--------------------|
+| Renderer | `packages/renderer/` | `shared/`, `platform/`, react, react-router-dom | `platform/electron/`, `platform/capacitor/` (directly) |
+| Application | `packages/shared/src/application/` | `shared/src/domain/` | `renderer/`, `platform/` |
+| Domain | `packages/shared/src/domain/` | _(nothing external)_ | Any other package |
+| Data | `packages/shared/src/data/` | `shared/src/domain/` | `renderer/`, `platform/` |
+| Platform Services | `packages/platform/src/` | `shared/src/domain/` | `renderer/`, `shared/src/application/` |
+| Categories | `packages/renderer/src/categories/` | `shared/`, renderer components | `platform/` (use injected providers) |
+| Apps | `apps/electron/`, `apps/capacitor/` | `platform/`, `renderer/` | `shared/` (access via renderer/platform) |
+
+### Dependency Graph Between Packages
+
+```
+apps/electron ──► packages/renderer ──► packages/shared
+       │                                       │
+       └───────────────► packages/platform ◄───┘
+                                │
+apps/capacitor ──► packages/renderer
+       │
+       └───────────────► packages/platform
+```
 
 ---
 
@@ -241,16 +177,14 @@ CategoryRegistry.register(BooksCategory);
 ## 4. Import Aliases (tsconfig paths)
 
 ```
-@/              → src/
-@domain/        → src/domain/
-@application/   → src/application/
-@data/          → src/data/
-@platform/      → src/platform/
-@presentation/  → src/presentation/
-@categories/    → src/categories/
+@shared/       → packages/shared/src/
+@renderer/     → packages/renderer/src/
+@platform/     → packages/platform/src/
 ```
 
-This keeps imports clean and avoids relative path hell (`../../../../domain/models/Song`).
+Aliases are configured per-package in each `tsconfig.json`. The `shared` package has no aliases (it imports only from itself). The `renderer` package aliases `@shared` and `@platform`. The `platform` package aliases only `@shared`.
+
+This keeps imports clean and avoids relative path hell (`../../packages/shared/src/domain/models/Song`).
 
 ---
 
@@ -274,14 +208,15 @@ This keeps imports clean and avoids relative path hell (`../../../../domain/mode
 
 ---
 
-## 6. Platform-Specific File Handling
+## 6. Platform-Specific Handling
 
-React Native's platform-specific file resolution is used where appropriate:
+Platform differences are handled via **dependency injection**, not file extension resolution or conditional imports.
 
-| Convention | When to Use |
-|------------|-------------|
-| `Component.native.ts` | Shared between Android and iOS (future) |
-| `Component.android.ts` | Android-specific implementation |
-| `Component.windows.ts` | Windows-specific implementation |
+Each app entry (`apps/electron/`, `apps/capacitor/`) provides its own implementations of the platform interfaces at startup:
 
-**Preference:** Use explicit platform directories (`platform/android/`, `platform/windows/`) with dependency injection rather than file extension resolution. The extension resolution is a fallback for trivial differences.
+- **Electron:** Injects `ElectronAuthProvider`, `NodeCryptoProvider`, `ElectronStorageProvider`, `BetterSqlite3Connection`
+- **Capacitor:** Injects `CapacitorAuthProvider`, `WebCryptoProvider`, `CapacitorStorageProvider`, `CapacitorSqliteConnection`
+
+The `renderer` package receives platform providers through React context (or a DI container). The `shared` package never knows which platform it's running on — it only knows the interface contracts.
+
+This approach has zero platform conditionals, zero file extension conventions, and zero compile-time platform detection.

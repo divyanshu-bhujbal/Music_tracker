@@ -1,46 +1,57 @@
 # Architecture & Module Boundaries
 
-> Source: PROJECT_CONSTITUTION.md Sections 9–11, Appendix B
+> Source: PROJECT_CONSTITUTION.md v1.1 Sections 9–11, Appendix B
 > Target: Personal Collection Manager V1.0
+> **(Revised — Electron + Capacitor adopted; Option A (RN+RNO) rejected)**
 
 ---
 
 ## 1. Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                 PRESENTATION LAYER                  │
-│    React Native Components + React Navigation       │
-│    Category UI Modules (Songs, future: Books...)    │
-└─────────────────────────────────────────────────────┘
-                           │
-┌─────────────────────────────────────────────────────┐
-│               APPLICATION LAYER                     │
-│    Category Framework  │  Sync Engine               │
-│    Duplicate Detector  │  Conflict Resolver          │
-│    Search/Filter Engine│  Settings Manager           │
-└─────────────────────────────────────────────────────┘
-                           │
-┌─────────────────────────────────────────────────────┐
-│                DOMAIN LAYER                         │
-│    Category Definition Interface                    │
-│    Entity Models (Song, Artist, Language, ...)      │
-│    Repository Interfaces                            │
-└─────────────────────────────────────────────────────┘
-                           │
-┌──────────────────┬────────────────────────────────────┐
-│  DATA LAYER      │    PLATFORM SERVICES LAYER         │
-│  SQLite (local)  │  Auth Interface                    │
-│  Repository Impl │  SecureStorage Interface           │
-│  Migrations      │  CloudStorageProvider Interface    │
-│  Change Tracker  │  CryptoProvider Interface          │
-└──────────────────┴────────────────────────────────────┘
-                           │
-┌──────────────────────────────────────────────────────┐
-│            PLATFORM IMPLEMENTATIONS                  │
-│  Android: RN modules (keychain, google-signin, etc.) │
-│  Windows: Custom PKCE flow, native/WASM crypto, etc. │
-└──────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                   RENDERER (Web UI)                         │
+│    React Components + React Router                          │
+│    Category UI Modules (Songs, future: Books...)            │
+│    Runs in: Electron BrowserWindow / Capacitor WebView       │
+└─────────────────────────────────────────────────────────────┘
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│                 APPLICATION LAYER                           │
+│    Category Framework  │  Sync Engine                        │
+│    Duplicate Detector  │  Conflict Resolver                  │
+│    Search/Filter Engine│  Settings Manager                   │
+│    (Pure TypeScript — identical to original)                 │
+└─────────────────────────────────────────────────────────────┘
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│                  DOMAIN LAYER                                │
+│    Category Definition Interface                             │
+│    Entity Models (Song, Artist, Language, ...)              │
+│    Repository Interfaces                                     │
+│    (Unchanged from original)                                  │
+└─────────────────────────────────────────────────────────────┘
+                              │
+┌────────────────────┬──────────────────────────────────────────┐
+│    DATA LAYER      │      PLATFORM SERVICES LAYER            │
+│  SQLite (local)    │  Auth Interface                          │
+│  Repository Impl   │  SecureStorage Interface                 │
+│  Migrations        │  CloudStorageProvider Interface          │
+│  Change Tracker    │  CryptoProvider Interface                │
+│  (SQL unchanged)   │  (Interfaces unchanged)                  │
+└────────────────────┴──────────────────────────────────────────┘
+                              │
+┌──────────────────────────────────────────────────────────────┐
+│              PLATFORM IMPLEMENTATIONS                        │
+│                                                              │
+│  Electron (Windows)  │  Capacitor (Android)                  │
+│  • better-sqlite3    │  • @capacitor-community/sqlite        │
+│  • Node.js crypto    │  • Web Crypto API (SubtleCrypto)      │
+│  • argon2 (npm)      │  • argon2-wasm                        │
+│  • electron-store    │  • @capacitor/secure-storage           │
+│  • google-auth-lib   │  • @capacitor-community/oauth          │
+│  • electron APIs     │  • @capacitor/core plugins            │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### Layer Dependencies
@@ -48,20 +59,19 @@
 Dependencies flow **top-down only** — layers above depend on layers below, never the reverse.
 
 ```
-Presentation → Application → Domain ← Data + Platform Services ← Platform Implementations
-                                ↑
-                   (Domain is pure TypeScript — no platform code, no React, no SQLite)
+Renderer → Application → Domain ← Data + Platform Services ← Platform Implementations
+                               ↑
+                  (Domain is pure TypeScript — no platform code, no React, no SQLite)
 ```
 
-### Primary vs. Fallback Architecture
+### Current Architecture
 
-| | Option A (Primary) | Option C (Fallback) |
+| | Windows | Android |
 |---|---|---|
-| **Windows target** | React Native for Windows | Electron |
-| **Android target** | React Native | React Native |
-| **Code sharing** | ~90% | ~75-85% |
-| **Shared code** | Single codebase | Monorepo with shared TypeScript package |
-| **Decision gate** | E-00 Technical Spike must pass all 7 validations | Escalate if any spike task fails irrecoverably |
+| **Platform target** | Electron 30+ | Capacitor 6+ |
+| **UI renderer** | React web in BrowserWindow | React web in WebView |
+| **Code sharing** | ~90–95% (single React web UI + shared TypeScript core) |
+| **Package manager** | pnpm monorepo with 5 workspace packages |
 
 ---
 
@@ -71,10 +81,11 @@ Presentation → Application → Domain ← Data + Platform Services ← Platfor
 
 | Component | Technology | Notes |
 |---|---|---|
-| Application framework | React Native (bare workflow) | No Expo managed workflow |
-| Windows target | React Native for Windows (RNW) | Microsoft maintained |
+| Application framework | React 18+ (web) | Single React web UI on both platforms |
+| Windows target | Electron 30+ | Desktop shell with Chromium renderer |
+| Android target | Capacitor 6+ | Native WebView wrapper with plugin access |
 | Language | TypeScript (strict mode) | All source code |
-| Navigation | React Navigation 6 | Proven; supports both platforms |
+| Navigation | React Router v6+ | Web-standard routing across both platforms |
 | State management | Zustand | Lightweight; no boilerplate |
 | Async data / caching | TanStack Query (React Query) | Server-state analogue for local async queries |
 
@@ -82,43 +93,45 @@ Presentation → Application → Domain ← Data + Platform Services ← Platfor
 
 | Component | Technology | Notes |
 |---|---|---|
-| Local database | SQLite | Via `react-native-sqlite-storage` |
+| Local database (Electron) | SQLite via `better-sqlite3` | Synchronous; native Node.js addon |
+| Local database (Capacitor) | SQLite via `@capacitor-community/sqlite` | Async; Capacitor plugin |
 | ORM / Query builder | **None** — raw SQL via typed repository pattern | Avoids ORM complexity for simple schema |
-| Schema migrations | Custom versioned migration runner | Built in-house; lightweight |
+| Schema migrations | Custom versioned migration runner | Identical SQL files on both platforms |
 
 ### Security
 
-| Component | Technology | Notes |
+| Component | Electron | Capacitor |
 |---|---|---|
-| Key derivation | Argon2id | `react-native-argon2` (Android); WASM fallback (Windows) |
-| Symmetric encryption | AES-256-GCM | `react-native-quick-crypto` or platform native |
-| Secure storage | `react-native-keychain` | Android Keystore / Windows Credential Manager |
-| Google OAuth | `@react-native-google-signin/google-signin` (Android); Custom PKCE (Windows) | Scoped behind AuthProvider interface |
+| Key derivation | `argon2` npm package (native) | `argon2-wasm` (WebAssembly) |
+| Symmetric encryption | Node.js `crypto` built-in | Web Crypto `SubtleCrypto` |
+| Secure storage | `electron-store` + `safeStorage` (DPAPI) | `@capacitor/secure-storage` (Android Keystore) |
+| Google OAuth | `google-auth-library` + PKCE | Custom PKCE with `@capacitor/browser` |
 
 ### Cloud Integration
 
 | Component | Technology | Notes |
 |---|---|---|
 | Cloud storage | Google Drive REST API | `drive.appdata` scope; app-private folder |
-| HTTP client | `fetch` (built-in) | No additional HTTP library needed |
+| HTTP client | `fetch` (built-in) | Available in both Electron and Capacitor WebView |
 
 ### UI Components
 
 | Component | Technology | Notes |
 |---|---|---|
-| Component library | React Native Paper | Material Design |
-| Icons | React Native Vector Icons | Validate Windows support during spike |
-| Virtualized list | FlashList (`@shopify/flash-list`) | Fallback: FlatList |
+| Component library | Material UI (MUI) | Mature React web component library |
+| Icons | `@mui/icons-material` | Full Material icon set |
+| Virtualized list | `@tanstack/react-virtual` | High-performance virtualized rendering |
 
 ### Build and Tooling
 
 | Component | Technology | Notes |
 |---|---|---|
-| Package manager | pnpm | Workspace support for potential monorepo |
+| Package manager | pnpm | Monorepo workspace support |
+| Bundler | Vite | Fast HMR; Electron uses Vite output |
 | Linting | ESLint + `@typescript-eslint` | Strict rules |
 | Formatting | Prettier | Enforced on commit |
-| Testing | Jest + React Native Testing Library | Unit and integration tests |
-| E2E testing | Detox (Android only) | Windows E2E testing out of scope for V1 |
+| Testing | Jest + React Testing Library (web) | Unit and integration tests |
+| E2E testing | Playwright | Tests Electron app + Capacitor web app |
 
 ---
 
@@ -126,16 +139,16 @@ Presentation → Application → Domain ← Data + Platform Services ← Platfor
 
 ### Boundary Rules
 
-1. **Platform-specific code is isolated** behind interfaces. No platform conditionals (`if (Platform.OS === 'windows')`) outside the Platform Implementations layer.
-2. **Adding a new category** requires implementing `CategoryDefinition` only — zero changes to Application or Presentation core.
+1. **Platform-specific code is isolated** behind interfaces. No platform conditionals (`if (platform === 'electron')`) outside the Platform Implementations layer.
+2. **Adding a new category** requires implementing `CategoryDefinition` only — zero changes to Application or Renderer core.
 3. **Adding a new cloud storage provider** requires implementing `CloudStorageProvider` only — zero changes to the Sync Engine.
-4. **Domain layer is pure TypeScript.** Zero React Native imports, zero platform APIs, zero database code. Dependencies flow in, never out.
+4. **Domain layer is pure TypeScript.** Zero React imports, zero platform APIs, zero database code. Dependencies flow in, never out.
 5. **Data layer uses raw SQL** with typed repositories. No ORM. Every query is explicit and auditable.
 
 ### Layer Responsibilities
 
-#### Presentation Layer
-- React Native screens, dialogs, navigation
+#### Renderer Layer
+- React web screens, dialogs, navigation
 - Category-specific UI components (Table, Tile, Detail, Edit, Create)
 - No business logic — delegates all decisions to Application layer
 - No direct database access — reads/writes through Application layer stores
@@ -152,10 +165,10 @@ Presentation → Application → Domain ← Data + Platform Services ← Platfor
 - **CategoryDefinition interface:** The extension contract for all categories
 - **Entity models:** Pure TypeScript types — Song, Artist, Language, Device, SyncLog
 - **Repository interfaces:** Generic `IRepository<T>` and specific `ISongRepository`, etc.
-- Must be the only layer imported by Presentation, Application, Data, and Platform Services
+- Must be the only layer imported by Renderer, Application, Data, and Platform Services
 
 #### Data Layer
-- **DatabaseConnection:** Singleton/connection pool, `open()`, `close()`, `execute()`, `query()`, `transaction()`
+- **DatabaseConnection:** Async interface; Electron uses sync `better-sqlite3` wrapped in Promise.resolve; Capacitor uses async plugin bridge
 - **MigrationRunner:** Versioned SQL migration execution at startup
 - **Repository implementations:** Typed SQL queries implementing domain interfaces
 - **Change Tracker:** Queries for identifying local/remote changes by `updated_at`
@@ -165,9 +178,9 @@ Presentation → Application → Domain ← Data + Platform Services ← Platfor
 - No implementations in this layer — only contracts
 
 #### Platform Implementations Layer
-- **Android:** `GoogleAuthProviderAndroid`, `NativeCryptoProvider`, `KeychainStorageProvider`, `GoogleDriveProvider`
-- **Windows:** `GoogleAuthProviderWindows` (custom PKCE), `WasmCryptoProvider`, `CredentialManagerStorage`, `GoogleDriveProvider`
-- **Shared:** `GoogleDriveProvider` (Drive REST API wrapper — platform-agnostic)
+- **Electron:** `ElectronAuthProvider` (PKCE + `google-auth-library`), `NodeCryptoProvider` (`argon2` npm + Node.js `crypto`), `ElectronStorageProvider` (`electron-store` + `safeStorage`), `BetterSqlite3Connection`
+- **Capacitor:** `CapacitorAuthProvider` (PKCE + `@capacitor/browser`), `WebCryptoProvider` (`argon2-wasm` + SubtleCrypto), `CapacitorStorageProvider` (`@capacitor/secure-storage`), `CapacitorSqliteConnection`
+- **Shared:** `GoogleDriveProvider` (Drive REST API wrapper — platform-agnostic, uses `fetch`)
 
 ---
 
@@ -178,9 +191,9 @@ These interfaces are mandated by the constitution and are the only contracts bet
 | Interface | V1 Implementation(s) | Purpose |
 |---|---|---|
 | `CloudStorageProvider` | `GoogleDriveProvider` | Upload, download, list, delete cloud database files |
-| `AuthProvider` | `GoogleAuthProviderAndroid`, `GoogleAuthProviderWindows` | OAuth PKCE flow, token management, sign-out |
-| `CryptoProvider` | `NativeCryptoProvider` (platform-native or WASM) | Argon2id KDF, AES-256-GCM encrypt/decrypt |
-| `SecureStorageProvider` | `KeychainStorageProvider` | Read/write/delete platform secure storage entries |
+| `AuthProvider` | `ElectronAuthProvider`, `CapacitorAuthProvider` | OAuth PKCE flow, token management, sign-out |
+| `CryptoProvider` | `NodeCryptoProvider` (Electron), `WebCryptoProvider` (Capacitor) | Argon2id KDF, AES-256-GCM encrypt/decrypt |
+| `SecureStorageProvider` | `ElectronStorageProvider`, `CapacitorStorageProvider` | Read/write/delete platform secure storage entries |
 | `CategoryDefinition` | `SongsCategory` (V1 only) | Per-category schema, repositories, UI components, duplicate detection |
 
 ### CloudStorageProvider
