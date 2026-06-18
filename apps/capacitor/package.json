@@ -11,6 +11,7 @@
     "cap:open": "npx cap open android"
   },
   "dependencies": {
+    "@collectio/shared": "workspace:*",
     "@capacitor-community/sqlite": "^6.0.2",
     "@capacitor/core": "^6.2.1",
     "jeep-sqlite": "^2.7.0",
