@@ -2,9 +2,14 @@
   "name": "collectio",
   "private": true,
   "scripts": {
+    "dev:electron": "pnpm --filter @collectio/electron-app dev",
     "dev:capacitor": "pnpm --filter @collectio/capacitor-app dev",
+    "build:electron": "pnpm --filter @collectio/electron-app build",
     "build:capacitor": "pnpm --filter @collectio/capacitor-app build",
+    "build": "pnpm -r build",
     "lint": "pnpm -r lint",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "clean": "pnpm -r clean"
   }
 }

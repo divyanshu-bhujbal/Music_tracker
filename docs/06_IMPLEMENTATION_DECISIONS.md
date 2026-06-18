@@ -1,0 +1,914 @@
+# Implementation Decisions — E-00b Capacitor Validation Spike
+
+> **Source of Truth:** This document records every technical decision, package selection, rejected approach, platform limitation, known issue, and required configuration discovered during the E-00b Capacitor validation spike.
+>
+> **Audience:** Future coding agents, the solo developer, and anyone maintaining this codebase.
+>
+> **Rule:** Before making any change to `apps/capacitor/` or adding a new Capacitor plugin, consult this document. If you encounter a decision recorded here, do not revisit it without new evidence.
+
+---
+
+## 1. Architectural Decisions
+
+### AD-01: `DatabaseConnection` Interface Is Async
+
+**Decision:** All methods on `DatabaseConnection` — `open()`, `close()`, `execute()`, `query()`, `transaction()` — return `Promise<T>`.
+
+**Reason:** The Capacitor plugin bridge communicates between the WebView JavaScript engine and native Android code via message passing, which is inherently asynchronous. Unlike Electron's `better-sqlite3` (synchronous), every call to `@capacitor-community/sqlite` returns a Promise.
+
+**Evidence:** Spike0b1_SQLite.ts — `CapacitorSqliteConnection` implements `DatabaseConnection` with all async methods. SQ-01 through SQ-12 pass using async operations.
+
+**Consequences:**
+
+- All repository methods become async (`async findById()` instead of `findById()`)
+- All callers in the application layer must `await` repository calls
+- Electron's `better-sqlite3` must be wrapped in `Promise.resolve()`
+- This is a deliberate architectural constraint, not a workaround
+
+**Future Considerations:** The async interface is defined in the architecture (E-02 T-02.3). The production `CapacitorSqliteConnection` (E-02 T-02.5) must match this interface.
+
+---
+
+### AD-02: Virtualization Is Mandatory, Not Optional
+
+**Decision:** The production `TableView` component (E-15 T-15.7) must use `@tanstack/react-virtual`. Virtualization is not an optimization — it is a hard requirement.
+
+**Reason:** T-00b.6 demonstrated that unvirtualized 10,000-row tables create 80,069 DOM nodes consuming ~156 MB of memory. Scroll performance degrades from "smooth" to "unusable" as memory pressure builds. T-00b.7 demonstrated virtualization reduces this to ~28 DOM rows consuming ~0.5 MB with 0.1ms constant render time.
+
+**Evidence:**
+
+- T-00b.6 (unvirtualized): 134-second render, 80,069 DOM nodes, ~156 MB memory, scroll degrades
+- T-00b.7 (virtualized): 0.1ms render, 28 DOM rows, ~0.5 MB memory, scroll always smooth
+
+**Consequences:**
+
+- `@tanstack/react-virtual` must be a production dependency
+- The `react-window` fallback is only relevant if TanStack fails to install
+- Row heights must be estimated at 48px with `measureElement` for dynamic height support
+- Overscan of 5 rows provides smooth scroll without excessive DOM overhead
+
+**Future Considerations:** `react-window` is noted as a fallback but has low maintenance activity since 2023 and only supports fixed row heights.
+
+---
+
+### AD-03: Separate OAuth Client IDs Per Platform
+
+**Decision:** The application uses different OAuth 2.0 client IDs for Android (Capacitor) and Windows (Electron). The original architecture's assumption of a single shared custom URI scheme (`collectio://oauth`) was invalid.
+
+**Reason:** Google Cloud Console does not support custom URI schemes as redirect URIs for any client type. Each platform needs its own client type:
+
+- **Android:** "Android" client type with package name + SHA-1 fingerprint
+- **Electron:** "Desktop app" client type (uses `http://localhost` loopback redirect)
+
+**Evidence:** Multiple failed attempts to use `collectio://oauth` with "Web application" and "Desktop app" client types in Google Cloud Console. Error: "Invalid Redirect: must end with a public top-level domain."
+
+**Consequences:**
+
+- The production `AuthProvider` must detect the platform and use the appropriate client ID
+- Android uses `com.collectio.app://` as the redirect scheme
+- Electron uses `http://localhost` with a loopback redirect
+- Configuration is managed through the DI container (E-04 T-04.8), not hardcoded in a single config file
+
+**Future Considerations:** The OAuth PKCE flow was not fully verified end-to-end during the spike. Complete OAuth with "Android" client type as a high-priority follow-up.
+
+---
+
+### AD-04: pnpm `node-linker=hoisted` Required for Capacitor
+
+**Decision:** The project uses `node-linker=hoisted` in `.npmrc`. Standard pnpm symlink layout is incompatible with Capacitor's build tooling.
+
+**Reason:** Capacitor's `cap sync` and Gradle build system resolve plugin Android source paths through `node_modules/`. pnpm's default symlink-based virtual store prevents Gradle from finding these paths. The `capacitor.settings.gradle` file contains relative paths like `../../../node_modules/@capacitor-community/sqlite/android` that must resolve to real directories.
+
+**Evidence:** Without `node-linker=hoisted`, `capacitor-community-sqlite` Gradle module was not created, causing "package com.getcapacitor.community.sqlite does not exist" compilation errors.
+
+**Consequences:**
+
+- `.npmrc` at the repository root must contain `node-linker=hoisted`
+- New developers must install with this setting
+- All `node_modules` are at the repository root in a flat layout
+
+**Future Considerations:** This is documented in the build system. Monitor Capacitor for improved pnpm support.
+
+---
+
+### AD-05: PRAGMA Handling Differs by Platform
+
+**Decision:** On Capacitor Android, ALL PRAGMA statements must use `query()` (which routes through Android's `SQLiteDatabase.rawQuery()`). On Electron, PRAGMAs can use `execute()` (which routes through `better-sqlite3.exec()`).
+
+**Reason:** Android's `SQLiteDatabase.execSQL()` rejects any statement that returns a result set. Every PRAGMA statement (`foreign_keys`, `journal_mode`, `synchronous`, `busy_timeout`, `integrity_check`) returns a result row on Android's SQLite implementation. This differs from Electron's `better-sqlite3` which accepts PRAGMAs via `exec()`.
+
+**Evidence:** Error: "Queries cannot be performed using execSQL(), use query() instead" on all PRAGMA statements. SQ-01 through SQ-12 only passed after routing all PRAGMAs through `query()`.
+
+**Consequences:**
+
+- The production `CapacitorSqliteConnection.open()` must use `query()` for PRAGMA setup
+- The production `BetterSqlite3Connection.open()` can use `exec()` for PRAGMA setup
+- This difference is abstracted behind the `DatabaseConnection` interface
+
+**Future Considerations:** If Capacitor SQLite plugin adds native PRAGMA handling, this decision can be revisited.
+
+---
+
+### AD-06: Single Shared `SQLiteConnection` Instance Across Tests
+
+**Decision:** In the spike and in production, a single `SQLiteConnection` instance is created and reused. Multiple connections to the same database use `retrieveConnection()` instead of `createConnection()`.
+
+**Reason:** `SQLiteConnection` maintains an internal connection dictionary keyed by database name. Multiple `SQLiteConnection` instances competing for the same dictionary cause "Connection spike_test already exists" errors. The plugin's `_connectionDict` is not scoped per-instance.
+
+**Evidence:** Early spike iterations created a new `new SQLiteConnection(CapacitorSQLite)` per test, causing all tests after SQ-01 to fail with "Connection spike_test already exists."
+
+**Consequences:**
+
+- In production, create one `SQLiteConnection` at app startup
+- Use `isConnection()` to check for existing connections before creating new ones
+- Use `retrieveConnection()` to get an existing `SQLiteDBConnection` handle
+- Use `closeAllConnections()` on app shutdown
+
+**Future Considerations:** React Strict Mode in development causes double-mounting. The `isConnection()/retrieveConnection()` pattern handles this correctly.
+
+---
+
+## 2. Package Decisions
+
+### PK-01: `@capacitor-community/sqlite` v6.0.2
+
+| Attribute        | Value                                                      |
+| ---------------- | ---------------------------------------------------------- |
+| **Status**       | ADOPTED — spike and production                             |
+| **Version**      | 6.0.2 (pinned)                                             |
+| **Alternatives** | None — this is the only viable SQLite plugin for Capacitor |
+| **Peer Dep**     | `@capacitor/core@^6.0.0`                                   |
+
+**Reason:** Provides full CRUD and foreign key enforcement via Android's native `SQLiteDatabase`. SQ-09 (FK enforcement) passed — the gating test for the architecture.
+
+**Key Findings:**
+
+- Default `isEncryption = true` (SqliteConfig.java) — must explicitly set `androidIsEncryption: false`
+- Requires `registerPlugin(CapacitorSQLitePlugin.class)` in `MainActivity.java`
+- API: `execute(sql, transaction)` — set `transaction: false` for PRAGMAs and auto-commit
+- All PRAGMAs must use `query()` not `execute()` on Android
+- Version 5 incompatible with `@capacitor/core@6`; Version 8 incompatible with `@capacitor/core@6`
+
+**Installation:**
+
+```bash
+pnpm add @capacitor-community/sqlite@6.0.2
+npx cap sync
+```
+
+**Registration (MainActivity.java):**
+
+```java
+import com.getcapacitor.community.database.sqlite.CapacitorSQLitePlugin;
+registerPlugin(CapacitorSQLitePlugin.class);
+```
+
+---
+
+### PK-02: `argon2-wasm` v0.9.0
+
+| Attribute        | Value                          |
+| ---------------- | ------------------------------ |
+| **Status**       | ADOPTED — spike and production |
+| **Version**      | 0.9.0                          |
+| **Alternatives** | `argon2-browser` (fallback)    |
+| **Peer Dep**     | None                           |
+
+**Reason:** WebAssembly-compiled Argon2id implementation that runs in the Capacitor WebView. Mean derivation time 749ms (under 3,000ms budget). Produces byte-identical output to Electron's native `argon2` npm package when password is UTF-8 encoded.
+
+**Key Findings:**
+
+- No TypeScript declarations — requires custom `argon2-wasm.d.ts`
+- Salt accepts `Uint8Array` (not just string as documented)
+- Password must be passed as `Uint8Array` via `new TextEncoder().encode(password)` for cross-platform determinism
+- Vite warns about `fs` and `path` externalization (expected, harmless)
+- API: `default.hash({ pass, salt, time, mem, parallelism, hashLen, type })`
+- Types: `Argon2d=0, Argon2i=1, Argon2id=2`
+- Returns `{ hash: Uint8Array, hashHex: string, encoded: string }`
+
+**Cross-Platform Determinism:**
+
+- ASCII passwords: byte-identical between WASM and native
+- Unicode passwords: REQUIRE `TextEncoder` for UTF-8 encoding before passing to WASM
+- Without TextEncoder: WASM's `intArrayFromString()` uses a different encoding than native UTF-8
+
+**Performance (mid-range 2022 Android device):**
+
+- Mean: 749ms
+- p99: 813ms
+- Min: 681ms
+- Max: 813ms
+- Budget: <3,000ms — PASS
+
+---
+
+### PK-03: `capacitor-secure-storage-plugin` v0.10.0
+
+| Attribute        | Value                                                |
+| ---------------- | ---------------------------------------------------- |
+| **Status**       | ADOPTED — spike and production                       |
+| **Version**      | 0.10.0 (pinned)                                      |
+| **Alternatives** | `@capacitor/preferences` (fallback, weaker security) |
+| **Plugin Type**  | Community (not core Capacitor)                       |
+
+**Reason:** Wraps Android Keystore for hardware-backed secure credential storage. Data survives app kill (KC-09 PASS). The original spec referenced `@capacitor/secure-storage` which does not exist on npm.
+
+**Key Findings:**
+
+- API: `set({ key, value })`, `get({ key })`, `remove({ key })`, `clear()`, `keys()`
+- `get()` returns `{ value: string }` — not JSON, not null
+- `get()` for missing key may throw on some Android versions — wrap in try/catch
+- `remove()` is NOT idempotent — throws "Item with given key does not exist" on missing keys
+- Must wrap `remove()` in try/catch that swallows "does not exist" errors
+- Requires `registerPlugin()` in `MainActivity.java`
+- No special Android permissions needed
+
+**Installation:**
+
+```bash
+pnpm add capacitor-secure-storage-plugin@0.10.0
+npx cap sync
+```
+
+---
+
+### PK-04: `@capacitor/browser` v6.0.6 + `@capacitor/app` v6
+
+| Attribute        | Value                                        |
+| ---------------- | -------------------------------------------- |
+| **Status**       | ADOPTED — spike and production               |
+| **Version**      | 6.0.6 (browser), 6.0.3 (app)                 |
+| **Alternatives** | Chrome Custom Tabs (if browser plugin fails) |
+| **Plugin Type**  | Core Capacitor                               |
+
+**Reason:** Opens the system browser for Google OAuth consent screen. `@capacitor/app` provides `App.addListener('appUrlOpen')` for receiving the redirect.
+
+**Key Findings:**
+
+- `App.addListener('appUrlOpen')` must be registered BEFORE `Browser.open()` to avoid race condition
+- Version 8 incompatible with `@capacitor/core@6`; pinned to v6
+- Browser close must be called after redirect to clean up
+
+**Installation:**
+
+```bash
+pnpm add @capacitor/browser@6 @capacitor/app@6
+npx cap sync
+```
+
+---
+
+### PK-05: `@tanstack/react-virtual` v3.14.3
+
+| Attribute        | Value                              |
+| ---------------- | ---------------------------------- |
+| **Status**       | ADOPTED — mandatory for production |
+| **Version**      | 3.14.3                             |
+| **Alternatives** | `react-window` (fallback)          |
+| **Native Code**  | None — pure JavaScript             |
+
+**Reason:** Headless virtualized list rendering. Reduces 10,000 DOM rows to ~28 visible rows. Render time 0.1ms. Memory reduced from ~156 MB to ~0.5 MB. Same ecosystem as TanStack Query (already in the tech stack).
+
+**Key Findings:**
+
+- No `npx cap sync` needed (pure JavaScript)
+- `useVirtualizer({ count, getScrollElement, estimateSize, overscan, measureElement })`
+- `getVirtualItems()` returns only visible rows
+- `scrollToIndex()` works instantly regardless of target index (no linear scan)
+- `measureElement` enables dynamic row heights via ResizeObserver
+- Scroll container must have fixed height and `overflow: auto`
+- Rows must use `position: absolute` with `transform: translateY()`
+- Estimated row height: 48px, overscan: 5
+
+---
+
+### PK-06: `jeep-sqlite` (Peer Dependency, Not Used on Android)
+
+| Attribute  | Value                                                     |
+| ---------- | --------------------------------------------------------- |
+| **Status** | INSTALLED but NOT USED on Android                         |
+| **Role**   | Web fallback for `@capacitor-community/sqlite` in browser |
+
+**Reason:** `@capacitor-community/sqlite` lists `jeep-sqlite` as a peer dependency. It is only used when running in a pure web browser (not in a Capacitor WebView with native plugin access). On Android with the native SQLite plugin registered, `jeep-sqlite` is not loaded or used.
+
+---
+
+## 3. Rejected Packages
+
+### RP-01: `@capacitor-community/sqlite` v5.7.4
+
+**Rejected Because:** Peer dependency requires `@capacitor/core@^5.0.0`. Installed with `@capacitor/core@6.2.1`, causing peer dependency warnings and potential runtime issues.
+
+**Replaced By:** v6.0.2.
+
+---
+
+### RP-02: `@capacitor-community/sqlite` v8.1.0
+
+**Rejected Because:** Peer dependency requires `@capacitor/core@>=8.0.0`. Installed with `@capacitor/core@6.2.1`, causing peer dependency mismatch.
+
+**Replaced By:** v6.0.2.
+
+---
+
+### RP-03: `@capacitor/browser` v8.0.3
+
+**Rejected Because:** Peer dependency requires `@capacitor/core@>=8.0.0`. Installed with `@capacitor/core@6.2.1`.
+
+**Replaced By:** v6.0.6.
+
+---
+
+### RP-04: `@capacitor/secure-storage` (Package Does Not Exist)
+
+**Rejected Because:** This package name is referenced in the spike spec but does not exist on the npm registry (`ERR_PNPM_FETCH_404`).
+
+**Replaced By:** `capacitor-secure-storage-plugin@0.10.0`.
+
+---
+
+### RP-05: `react-window`
+
+**Rejected Because:** Maintainer stepped back in 2023. Low maintenance activity. Fixed row heights only (no dynamic measurement). Wrapper component API is less flexible than TanStack's headless approach.
+
+**Status:** Kept as documented fallback if `@tanstack/react-virtual` fails entirely.
+
+---
+
+### RP-06: `argon2-browser` (Alternative WASM Argon2)
+
+**Rejected Because:** `argon2-wasm` works correctly. No reason to switch.
+
+**Status:** Kept as documented fallback if `argon2-wasm` fails to install, load, or produces incorrect output.
+
+**Known Differences:** Larger WASM binary (~200KB vs ~150KB). Different API: `argon2Browser.hash({ ..., type: argon2Browser.ArgonType.Argon2id })`.
+
+---
+
+### RP-07: `@capacitor/preferences` (Weaker Security)
+
+**Rejected Because:** Uses `SharedPreferences` in app internal storage, not hardware-backed Android Keystore. While the `encrypt` option provides AES encryption via a device-derived key, it does not use the hardware-backed secure enclave.
+
+**Status:** Kept as fallback if `capacitor-secure-storage-plugin` fails KC-09 (data survival after app kill) on specific OEM devices.
+
+**Tradeoff:** Better persistence behavior on aggressive OEM devices (Xiaomi, Huawei, OnePlus) but weaker offline attack resistance.
+
+---
+
+## 4. Platform Limitations
+
+### PL-01: Android `execSQL()` Rejects Result-Returning Statements
+
+**Limitation:** Android's `SQLiteDatabase.execSQL()` throws "Queries cannot be performed using execSQL(), use query() instead" for any SQL that returns a result set. This affects ALL PRAGMA statements on Android, even pure setters like `PRAGMA foreign_keys = ON`.
+
+**Evidence:** All SQ tests failed with this error until PRAGMAs were routed through `query()`.
+
+**Workaround:** Use `query()` (which routes through `SQLiteDatabase.rawQuery()`) for all PRAGMA statements. See IW-01.
+
+**Scope:** Capacitor Android only. Electron's `better-sqlite3` does not have this limitation.
+
+---
+
+### PL-02: `crypto.getRandomValues()` 65,536-Byte Entropy Limit
+
+**Limitation:** The Web Crypto API's `crypto.getRandomValues()` has a per-call limit of 65,536 bytes (64 KB). Calling it with a larger buffer throws "The ArrayBufferView's byte length exceeds the number of bytes of entropy available via this API."
+
+**Evidence:** AE-07 (5MB encrypt benchmark) failed with this error.
+
+**Workaround:** Generate large buffers in 65,536-byte chunks using `Uint8Array.subarray()`. See IW-04.
+
+**Scope:** All platforms (Capacitor Android, Electron). This is a Web Crypto API specification, not an Android limitation.
+
+---
+
+### PL-03: Android Keystore Delete Is Not Idempotent
+
+**Limitation:** `capacitor-secure-storage-plugin` throws "Item with given key does not exist" when deleting a key that doesn't exist. Some Android Keystore implementations do not treat delete as idempotent.
+
+**Evidence:** KC-06 (idempotent delete) failed with this error.
+
+**Workaround:** Wrap all `remove()` calls in try/catch that swallows "does not exist" errors. See IW-05.
+
+**Scope:** OEM-dependent. Different Android manufacturers may have different Keystore implementations.
+
+---
+
+### PL-04: Google Cloud Console Rejects Custom URI Schemes
+
+**Limitation:** Google Cloud Console's OAuth 2.0 client configuration does not accept custom URI schemes (like `collectio://oauth`) as redirect URIs for any client type.
+
+- "Web application" type: Only HTTP/HTTPS URLs with valid TLDs
+- "Desktop app" type: Fixed to `http://localhost` (not configurable)
+- "Android" type: No redirect URI field (uses package name + SHA-1)
+
+**Evidence:** Multiple failed attempts with "Invalid Redirect: must end with a public top-level domain" and "Invalid Redirect: must use a domain that is a valid top private domain."
+
+**Workaround:** Use "Android" client type with `com.collectio.app://` redirect scheme (matches package name format). See AD-03.
+
+**Scope:** Google OAuth 2.0 configuration only. Other OAuth providers (if added in future) may have different requirements.
+
+---
+
+### PL-05: `@capacitor-community/sqlite` Defaults to Encryption
+
+**Limitation:** The plugin's `SqliteConfig.java` defaults `isEncryption = true`. Without explicit configuration, the plugin attempts Android Keystore + EncryptedSharedPreferences + SQLCipher setup, which fails with a null-message exception on some devices.
+
+**Evidence:** "CapacitorSQLitePlugin: null" error before adding `androidIsEncryption: false` to capacitor.config.
+
+**Workaround:** Explicitly set `androidIsEncryption: false` in `capacitor.config.ts` plugins section. See RC-02.
+
+**Scope:** Capacitor Android only.
+
+---
+
+### PL-06: Community Capacitor Plugins Require Manual Registration
+
+**Limitation:** Core Capacitor plugins are auto-registered via `cap sync`. Community plugins (`@capacitor-community/sqlite`, `capacitor-secure-storage-plugin`) require explicit `registerPlugin()` in `MainActivity.java`.
+
+**Evidence:** Plugin code compiled but returned null at runtime until `registerPlugin()` was added.
+
+**Workaround:** Check each community plugin's documentation for required `MainActivity.java` registration. See RC-05.
+
+**Scope:** All community Capacitor plugins.
+
+---
+
+### PL-07: React Strict Mode Double-Mount Breaks Capacitor Connection Management
+
+**Limitation:** In development mode, React Strict Mode mounts components twice. The first mount's Capacitor plugin connection is never cleaned up before the second mount tries to create the same connection, causing "Connection already exists" errors.
+
+**Evidence:** SQ-01 failed with "CreateConnection: Connection spike_test already exists" on the first test, even though no prior tests had run.
+
+**Workaround:** Use `isConnection()` to check for existing connections and `retrieveConnection()` to reuse them. See IW-02.
+
+**Scope:** Development mode only. Production builds are not affected. But the defensive code (isConnection/retrieveConnection) is harmless in production and guards against edge cases.
+
+---
+
+## 5. Required Configurations
+
+### RC-01: `.npmrc` — `node-linker=hoisted`
+
+**File:** `S:\Projects\Music_Tracker\.npmrc`
+
+```ini
+node-linker=hoisted
+```
+
+**Why:** Capacitor's `cap sync` and Gradle build cannot find plugin Android source through pnpm's virtual store symlinks. The hoisted layout creates a flat `node_modules` at the repository root.
+
+**When to check this:** If Capacitor sync fails to find plugins, or Gradle cannot find plugin source directories, verify this setting.
+
+---
+
+### RC-02: `capacitor.config.ts` — `androidIsEncryption: false`
+
+**File:** `apps/capacitor/capacitor.config.ts`
+
+```typescript
+plugins: {
+  CapacitorSQLite: {
+    androidIsEncryption: false,
+  },
+},
+```
+
+**Why:** `@capacitor-community/sqlite` defaults to encryption mode. The local SQLite database is unencrypted per constitution Section 16.4. Encryption mode causes Keystore initialization failures on some devices.
+
+**When to check this:** If the plugin returns "CapacitorSQLitePlugin: null" at runtime, verify this setting is present.
+
+---
+
+### RC-03: `capacitor.config.ts` — `allowNavigation`
+
+**File:** `apps/capacitor/capacitor.config.ts`
+
+```typescript
+server: {
+  androidScheme: "https",
+  allowNavigation: ["com.collectio.app://*"],
+},
+```
+
+**Why:** Capacitor's WebView blocks navigation to custom URI schemes by default. `allowNavigation` whitelists the app's custom scheme for OAuth redirect handling.
+
+**When to check this:** If `App.addListener('appUrlOpen')` never fires after OAuth redirect, verify this setting.
+
+---
+
+### RC-04: `AndroidManifest.xml` — OAuth Intent Filter
+
+**File:** `apps/capacitor/android/app/src/main/AndroidManifest.xml`
+
+```xml
+<activity ...>
+    <!-- ... existing intent filters ... -->
+
+    <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="com.collectio.app" android:host="" />
+    </intent-filter>
+</activity>
+```
+
+**Why:** Android's intent system routes custom URI scheme requests to the app. Without this intent filter, Google OAuth redirects are not delivered to the Capacitor app.
+
+**When to check this:** If OAuth redirects show "URL not recognized" in the browser instead of returning to the app, verify this filter is inside the correct `<activity>` element.
+
+---
+
+### RC-05: `MainActivity.java` — Plugin Registration
+
+**File:** `apps/capacitor/android/app/src/main/java/com/collectio/app/MainActivity.java`
+
+```java
+package com.collectio.app;
+
+import android.os.Bundle;
+import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.community.database.sqlite.CapacitorSQLitePlugin;
+
+public class MainActivity extends BridgeActivity {
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(CapacitorSQLitePlugin.class);
+        super.onCreate(savedInstanceState);
+    }
+}
+```
+
+**Why:** Community Capacitor plugins are not auto-registered by `cap sync`. The `registerPlugin()` call must be made before `super.onCreate()`.
+
+**Correct class name:** `CapacitorSQLitePlugin` (NOT `CapacitorSQLite`)
+
+**Correct package:** `com.getcapacitor.community.database.sqlite.CapacitorSQLitePlugin` (NOT `com.getcapacitor.community.sqlite.CapacitorSQLite`)
+
+**For secure storage plugin:** `import com.securestorage.capacitor.plugin.SecureStoragePlugin;` and call `registerPlugin(SecureStoragePlugin.class);`
+
+**When to check this:** If any community Capacitor plugin returns null at runtime, verify it is registered in `MainActivity.java`.
+
+---
+
+### RC-06: Google Cloud Console — Android OAuth Client
+
+**Setup Steps:**
+
+1. Go to https://console.cloud.google.com/
+2. Create a project (or use existing)
+3. Enable Google Drive API
+4. Create OAuth 2.0 Client ID → Application type: **"Android"**
+5. Package name: `com.collectio.app` (must match `appId` in `capacitor.config.ts`)
+6. SHA-1 certificate fingerprint: from debug keystore
+7. Copy the Client ID into the app configuration
+
+**Why:** "Android" client type is required because Google Cloud Console does not accept custom URI schemes for any other client type.
+
+**When to check this:** If OAuth flow shows "Access blocked: Authorization Error" or "Error 400: invalid_request" with redirect URI issues.
+
+---
+
+## 6. Known Issues
+
+### KI-01: OAuth PKCE Flow Not Fully Verified End-to-End
+
+**Status:** PARTIALLY RESOLVED
+
+**Issue:** The OAuth PKCE flow was implemented but did not complete end-to-end on the test device. The authorization code was not exchanged for tokens. The redirect URI configuration is correct but requires Google Cloud Console setup with "Android" client type.
+
+**Impact:** The architecture question "Can Google OAuth PKCE complete on Capacitor Android?" is not definitively answered.
+
+**Next Step:** Complete the OAuth flow with "Android" client type as a high-priority follow-up.
+
+---
+
+### KI-02: WAL Mode Requires `query()` Not `execute()` on Android
+
+**Status:** RESOLVED with workaround
+
+**Issue:** All PRAGMA statements must use `query()` (not `execute()`) on Capacitor Android because Android's `execSQL()` rejects result-returning statements. This is a platform-specific behavior.
+
+**Workaround:** Route all PRAGMAs through `query()` in the Capacitor implementation. Electron's `better-sqlite3` can continue using `exec()`.
+
+**Future:** If the Capacitor SQLite plugin adds native PRAGMA handling, this workaround can be removed.
+
+---
+
+### KI-03: Secure Storage Delete Not Idempotent
+
+**Status:** RESOLVED with workaround
+
+**Issue:** `capacitor-secure-storage-plugin` throws "Item with given key does not exist" when deleting a non-existent key. The `SecureStorageProvider` interface requires idempotent delete.
+
+**Workaround:** Wrap all `remove()` calls in try/catch that swallows "does not exist" errors.
+
+**Future:** Monitor plugin updates for idempotent delete support.
+
+---
+
+### KI-04: Render Time Measurement Bug in T-00b.6 and T-00b.7
+
+**Status:** RESOLVED
+
+**Issue:** Initial render time measurements showed 134 seconds (T6) and 42 seconds (T7) due to measuring across `useEffect`/`useLayoutEffect` boundaries. The actual render times are ~187ms (T6) and ~0.1ms (T7).
+
+**Resolution:** Measure render start and end time directly inside `useLayoutEffect` by calling `performance.now()` at the beginning and end of the effect.
+
+**Future:** Any performance measurement in React components should capture timestamps within a single effect boundary.
+
+---
+
+## 7. Implementation Workarounds
+
+### IW-01: `DROP TABLE IF EXISTS` Instead of `deleteDatabase()`
+
+**Problem:** `CapacitorSQLite.deleteDatabase()` fails silently when connection dictionary holds stale references.
+
+**Workaround:** Each test drops its own tables with `DROP TABLE IF EXISTS` before creating them. Avoids the connection lifecycle issue entirely.
+
+**Production Impact:** None — this is a test-only pattern. Production migrations use `CREATE TABLE IF NOT EXISTS`.
+
+---
+
+### IW-02: `isConnection()` / `retrieveConnection()` Pattern
+
+**Problem:** React Strict Mode double-mounting creates duplicate connections.
+
+**Workaround:** In `open()`, check `isConnection()` first. If connection exists, use `retrieveConnection()`. If not, use `createConnection()`.
+
+```typescript
+const existing = await this.sqlite.isConnection(this.dbName, false);
+if (existing.result) {
+    dbConn = await this.sqlite.retrieveConnection(this.dbName, false);
+} else {
+    dbConn = await this.sqlite.createConnection(
+        this.dbName,
+        false,
+        'no-encryption',
+        1,
+        false,
+    );
+}
+```
+
+**Production Impact:** This pattern should be used in the production `CapacitorSqliteConnection.open()`. It is harmless and guards against edge cases.
+
+---
+
+### IW-03: `TextEncoder` for Unicode Password Determinism
+
+**Problem:** `argon2-wasm`'s internal `intArrayFromString()` uses a different encoding than native `argon2` npm package's UTF-8 for non-ASCII characters. Cross-platform AR-CROSS test fails for Unicode passwords.
+
+**Workaround:** Encode password as UTF-8 bytes via `new TextEncoder().encode(password)` before passing to `argon2.hash()`. Pass the resulting `Uint8Array` as the `pass` parameter.
+
+```typescript
+const passBytes = new TextEncoder().encode(password);
+await argon2.default.hash({ pass: passBytes, salt, ... });
+```
+
+**Production Impact:** The production `WebCryptoProvider.deriveKey()` must use this pattern. Unit test with Unicode passwords.
+
+---
+
+### IW-04: Chunked `crypto.getRandomValues()` for Large Buffers
+
+**Problem:** `crypto.getRandomValues()` has a 65,536-byte per-call limit. 5MB buffers fail.
+
+**Workaround:** Generate large buffers in 64KB chunks:
+
+```typescript
+const buffer = new Uint8Array(size);
+const CHUNK = 65536;
+for (let off = 0; off < size; off += CHUNK) {
+    crypto.getRandomValues(buffer.subarray(off, Math.min(off + CHUNK, size)));
+}
+```
+
+**Production Impact:** Any code generating large random buffers must use this pattern. This is a Web Crypto API specification, not a platform limitation.
+
+---
+
+### IW-05: Idempotent Delete Wrapper for Secure Storage
+
+**Problem:** `capacitor-secure-storage-plugin` throws on delete of non-existent keys.
+
+**Workaround:** Wrap `remove()` in try/catch:
+
+```typescript
+async function remove(key: string): Promise<void> {
+    try {
+        await SecureStoragePlugin.remove({ key });
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.includes('does not exist')) {
+            throw err;
+        }
+    }
+}
+```
+
+**Production Impact:** The production `CapacitorStorageProvider.remove()` must use this wrapper.
+
+---
+
+### IW-06: `toArrayBuffer()` Helper for TypeScript 5.x SubtleCrypto
+
+**Problem:** TypeScript 5.x types `Uint8Array.buffer` as `ArrayBufferLike` (including `SharedArrayBuffer`), but SubtleCrypto API requires `BufferSource` (only `ArrayBuffer`).
+
+**Workaround:** Create a helper function:
+
+```typescript
+function toArrayBuffer(view: Uint8Array): ArrayBuffer {
+    return view.buffer.slice(
+        view.byteOffset,
+        view.byteOffset + view.byteLength,
+    ) as ArrayBuffer;
+}
+```
+
+**Production Impact:** All cryptographic operations in the production `WebCryptoProvider` must use this helper when passing `Uint8Array` to SubtleCrypto.
+
+---
+
+## 8. Performance Baselines
+
+### PB-01: Argon2id WASM Key Derivation
+
+| Metric           | Value                     | Budget   | Status             |
+| ---------------- | ------------------------- | -------- | ------------------ |
+| Mean             | 749ms                     | <3,000ms | PASS               |
+| p99              | 813ms                     | <4,000ms | PASS               |
+| Min              | 681ms                     | —        | —                  |
+| Max              | 813ms                     | —        | —                  |
+| WASM load time   | ~320ms                    | —        | Informational only |
+| Memory (JS heap) | 9.5MB used, 2,222MB limit | —        | No OOM             |
+
+**Parameters:** 64 MB memory, 3 iterations, 4 parallelism, 32-byte output
+
+**Device context:** API level 16, WebView 148.0.7778.215 (potentially emulated). Physical mid-range device may have better performance. Minimum-spec (2GB RAM) may have worse.
+
+---
+
+### PB-02: Virtualized Table Rendering (10,000 Rows)
+
+| Metric          | Unvirtualized (T6)   | Virtualized (T7) | Improvement |
+| --------------- | -------------------- | ---------------- | ----------- |
+| DOM rows        | 10,000               | 28               | 357x        |
+| Total DOM nodes | 80,069               | 279              | 287x        |
+| Memory (est.)   | ~156 MB              | ~0.5 MB          | 286x        |
+| Render time     | ~187ms               | 0.1ms            | —           |
+| Scroll          | Degrades to unusable | Always smooth    | —           |
+
+**Row height:** 48px | **Overscan:** 5 | **Viewport:** ~800px
+
+---
+
+### PB-03: AES-GCM via SubtleCrypto (5MB)
+
+| Metric       | Value                    | Budget                 | Status |
+| ------------ | ------------------------ | ---------------------- | ------ |
+| Mean encrypt | (not captured in report) | <500ms (informational) | —      |
+| Mean decrypt | (not captured in report) | <500ms (informational) | —      |
+
+**Note:** The benchmark ran but detailed timing was not included in the JSON report. Sub-millisecond for small payloads observed during testing.
+
+---
+
+### PB-04: Scroll-to-Index Performance
+
+| Target Index | Duration | Data Correct |
+| ------------ | -------- | ------------ |
+| 5,000        | ~101ms   | Yes          |
+| 9,980        | ~100ms   | Yes          |
+
+**Key finding:** Scroll time is constant regardless of target index. No linear scan. The 100ms includes DOM update and measurement overhead.
+
+---
+
+## 9. Version Compatibility Matrix
+
+| Package                           | Required Version | Compatible Core | Notes                        |
+| --------------------------------- | ---------------- | --------------- | ---------------------------- |
+| `@capacitor/core`                 | 6.2.1            | —               | Scaffold target              |
+| `@capacitor/cli`                  | 6.2.1            | —               | Required for `cap sync`      |
+| `@capacitor/android`              | 6.2.1            | —               | Android platform support     |
+| `@capacitor-community/sqlite`     | 6.0.2            | 6.x             | NOT 5.x, NOT 8.x             |
+| `@capacitor/browser`              | 6.0.6            | 6.x             | NOT 8.x                      |
+| `@capacitor/app`                  | 6.0.3            | 6.x             | Required for `appUrlOpen`    |
+| `capacitor-secure-storage-plugin` | 0.10.0           | 6.x             | Community plugin             |
+| `argon2-wasm`                     | 0.9.0            | —               | No peer dep                  |
+| `@tanstack/react-virtual`         | 3.14.3           | —               | Pure JS                      |
+| `react`                           | 18.3.1           | —               | Scaffold target              |
+| `react-dom`                       | 18.3.1           | —               | Scaffold target              |
+| `typescript`                      | 5.9.3            | —               | Strict mode                  |
+| `vite`                            | 5.4.21           | —               | Bundler                      |
+| `pnpm`                            | 9.x              | —               | NOT 11.x (requires Node 22+) |
+| `node`                            | 20.14.0          | —               | Minimum for pnpm 9.x         |
+
+---
+
+## 10. Future Risks
+
+### FR-01: `@capacitor-community/sqlite` Is Community-Maintained
+
+**Severity:** HIGH
+
+**Risk:** The SQLite plugin is community-maintained, not part of Capacitor core. If the maintainer abandons the package or a Capacitor core update breaks compatibility, there is no guaranteed fix path.
+
+**Mitigation:**
+
+- Pin the exact version (not `^6.0.0`)
+- Monitor the GitHub repository for activity
+- Prepare a fallback plan: custom Capacitor SQLite plugin (2-3 days estimated)
+- Test plugin upgrades in a dedicated spike before merging
+
+---
+
+### FR-02: Argon2id WASM May OOM on Minimum-Spec Devices
+
+**Severity:** MEDIUM
+
+**Risk:** The 64MB memory allocation for Argon2id WASM represents 13-50% of available heap on a 2GB RAM device. The spike was tested on an emulated device; physical minimum-spec device behavior is unknown.
+
+**Mitigation:**
+
+- Test on a physical 2GB RAM device before proceeding to production
+- If OOM occurs: halve memory to 32MB and double iterations to 4
+- If still OOM: fallback to PBKDF2 via SubtleCrypto (document the security tradeoff)
+- Production should accept configurable memory parameters
+
+---
+
+### FR-03: Secure Storage Persistence Varies by OEM
+
+**Severity:** MEDIUM
+
+**Risk:** KC-09 passed on the test device. Aggressive battery optimization on Xiaomi, Huawei, and OnePlus devices may clear the app's data directory when the user swipes from recents.
+
+**Mitigation:**
+
+- Test KC-09 on at least 2 additional OEM devices
+- If data loss occurs: fallback to `@capacitor/preferences` with encryption
+- Production should run a startup check to verify stored credentials exist
+
+---
+
+### FR-04: OAuth PKCE Not Verified End-to-End
+
+**Severity:** HIGH
+
+**Risk:** The OAuth flow was implemented but not fully verified. The architecture depends on OAuth for Google Drive cloud sync.
+
+**Mitigation:**
+
+- Complete the OAuth flow as the highest priority follow-up
+- If "Android" client type doesn't work: evaluate Chrome Custom Tabs
+- If neither works: use "Desktop app" client type with `http://localhost` loopback redirect
+
+---
+
+### FR-05: Encrypted File Format Not Validated End-to-End
+
+**Severity:** MEDIUM
+
+**Risk:** Individual components (Argon2id, AES-GCM, secure storage) were validated separately. An integration bug where one component's output doesn't match another's expected input could break the file format.
+
+**Mitigation:**
+
+- T-03.5 (EncryptedFileFormat.pack/unpack) must be implemented and tested
+- T-03.6 (Cross-platform determinism) must verify Capacitor ↔ Electron compatibility
+- The byte-level layout (constitution Section 16.3) must be verified with hex dumps on both platforms
+
+---
+
+### FR-06: Capacitor 8 Upgrade Path
+
+**Severity:** LOW
+
+**Risk:** All packages are pinned to Capacitor 6.x. Capacitor 8.x has breaking API changes.
+
+**Mitigation:**
+
+- Plan a Capacitor 8 upgrade spike before production release
+- `@capacitor-community/sqlite` v8.1.0 exists (compatible with Capacitor 8)
+- `@capacitor/browser` v8.x exists
+- Estimated upgrade effort: 1-2 days
+
+---
+
+### FR-07: No Automated E2E Testing on Android
+
+**Severity:** LOW (for spike phase), MEDIUM (for production)
+
+**Risk:** All spike tests were manual (on-device). No automated E2E tests exist for Capacitor Android.
+
+**Mitigation:**
+
+- E-16 (Testing & QA) includes Playwright-based E2E tests
+- Android E2E testing via Appium or Maestro should be considered for critical flows
+- Manual test checklist for every release on a physical device
+
+---
+
+_End of Implementation Decisions_
