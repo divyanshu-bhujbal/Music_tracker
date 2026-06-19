@@ -29,14 +29,30 @@ Use these exact versions. Do NOT use version ranges (`^` or `~`). Pin to the exa
 | `@capacitor-community/sqlite`     | 6.0.2   | NOT 5.x, NOT 8.x                |
 | `capacitor-secure-storage-plugin` | 0.10.0  | NOT `@capacitor/secure-storage` |
 
-### JavaScript Libraries
+### Renderer UI (packages/renderer)
 
 | Package                   | Version | Notes                         |
 | ------------------------- | ------- | ----------------------------- |
-| `argon2-wasm`             | 0.9.0   | WASM Argon2id                 |
-| `@tanstack/react-virtual` | 3.14.3  | Mandatory for table rendering |
 | `react`                   | 18.3.1  | Scaffold target               |
 | `react-dom`               | 18.3.1  | Scaffold target               |
+| `react-router-dom`        | 6.30.4  | v6, NOT v7                    |
+| `@tanstack/react-query`   | 5.101.0 | Server state / sync           |
+| `@tanstack/react-virtual` | 3.14.3  | Mandatory for table rendering |
+| `zustand`                 | 5.0.14  | Client state management       |
+| `@mui/material`           | 6.5.0   | Material UI v6                |
+| `@mui/icons-material`     | 6.5.0   | Must match MUI version        |
+| `@emotion/react`          | 11.14.0 | MUI peer dep (must be explicit) |
+| `@emotion/styled`         | 11.14.1 | MUI peer dep (must be explicit) |
+| `immer`                   | 11.1.8  | Zustand peer dep (must be explicit) |
+| `use-sync-external-store` | 1.6.0   | Zustand peer dep (must be explicit) |
+| `@types/react`            | 18.3.31 | Latest 18.3.x types           |
+| `@types/react-dom`        | 18.3.7  | Latest 18.3.x types (see Rule 11.4) |
+
+### Other JavaScript Libraries
+
+| Package       | Version | Notes         |
+| ------------- | ------- | ------------- |
+| `argon2-wasm` | 0.9.0   | WASM Argon2id |
 
 ### Build Tools
 
@@ -446,6 +462,16 @@ async function remove(key: string): Promise<void> {
 
 ---
 
+### Rule 9.5: `.tsbuildinfo` Files Must Be Gitignored
+
+**Imperative:** Ensure `*.tsbuildinfo` is in `.gitignore`. Never commit `tsconfig.tsbuildinfo` or any `.tsbuildinfo` file.
+
+**Why:** TypeScript generates `.tsbuildinfo` files when `composite: true` is set (even with `noEmit: true`). These are incremental compilation caches — build artifacts that vary by machine and must not be version-controlled.
+
+**Check:** If you see `tsconfig.tsbuildinfo` in `git status`, verify `*.tsbuildinfo` is in `.gitignore` and delete the file.
+
+---
+
 ## 10. Android Platform Rules
 
 ### Rule 10.1: Community Plugins Require Manual Registration
@@ -492,6 +518,48 @@ async function remove(key: string): Promise<void> {
 
 ---
 
+### Rule 11.4: Verify `@types/*` Versions Against npm Registry
+
+**Imperative:** Before pinning a `@types/*` package version in any `package.json`, verify it actually exists on the npm registry. Run `npm view @types/<package> versions --json` and use the latest version matching the target major.minor.
+
+**Why:** `@types/react-dom` and `@types/react` have independent release cadences on DefinitelyTyped. `@types/react@18.3.31` exists, but `@types/react-dom@18.3.30` does not — the latest `@types/react-dom` 18.3.x is `18.3.7`. Never assume the types packages share patch numbers with each other or with their runtime counterparts.
+
+**Pattern:**
+```bash
+# Before pinning any @types package:
+npm view @types/react-dom versions --json | grep "18.3"
+# Use the highest version found, e.g. "18.3.7"
+```
+
+---
+
+### Rule 11.5: Workspace tsconfig.json Files Must Be Consistent
+
+**Imperative:** All workspace package `tsconfig.json` files must include the same compiler option set as `packages/shared/tsconfig.json`, plus package-specific additions (e.g., `jsx`, `lib`, `paths`). Never omit options present in the sibling packages.
+
+**Why:** Inconsistent compiler options between workspace packages cause divergent type-checking behavior and break TypeScript project references (`composite: true`). The shared package sets the baseline.
+
+**Required baseline options in every workspace package tsconfig:**
+- `strict: true`
+- `esModuleInterop: true`
+- `skipLibCheck: true`
+- `forceConsistentCasingInFileNames: true`
+- `noEmit: true`
+- `noUnusedLocals: true`
+- `noUnusedParameters: true`
+- `noFallthroughCasesInSwitch: true`
+- `isolatedModules: true`
+- `declaration: true`
+- `declarationMap: true`
+- `sourceMap: true`
+- `outDir: "./dist"`
+- `rootDir: "./src"`
+- `composite: true`
+
+**Check:** Diff each new package's tsconfig against `packages/shared/tsconfig.json`. Every option present in shared should be present in the new package (except where intentionally overridden for layer-specific needs like `jsx` or `lib`).
+
+---
+
 ## 12. Security Rules
 
 ### Rule 12.1: Never Store the Master Password
@@ -529,6 +597,16 @@ async function remove(key: string): Promise<void> {
 ### Rule 13.3: Adding a Category Requires Only `CategoryDefinition`
 
 **Imperative:** Adding a new category (Books, Movies, Games) must require only implementing `CategoryDefinition` and writing the database migration. Zero changes to Application or Renderer core.
+
+---
+
+### Rule 13.4: Renderer Must Never Import Platform-Specific Code
+
+**Imperative:** `packages/renderer/` must never import from `platform/electron/` or `platform/capacitor/`. Platform providers are injected via React context at the app entry point (`apps/electron/` or `apps/capacitor/`), never imported directly by renderer components.
+
+**Why:** The renderer is a shared React UI package that runs identically on Electron (BrowserWindow) and Capacitor (WebView). Direct platform imports would couple the UI to a specific platform, breaking portability.
+
+**Check:** Grep `packages/renderer/src/` for `from 'platform/'` or `from '@capacitor/'` — must produce zero matches.
 
 ---
 

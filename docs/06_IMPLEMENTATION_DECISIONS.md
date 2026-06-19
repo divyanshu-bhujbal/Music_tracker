@@ -109,6 +109,22 @@
 
 ---
 
+### AD-07: `@types/react-dom` and `@types/react` Have Independent Version Tracks
+
+**Decision:** Never assume `@types/react-dom` and `@types/react` share the same patch version. Always verify the npm registry for the actual latest version of each types package independently.
+
+**Reason:** The `@types/react-dom` 18.3.x line has only 8 releases (up to `18.3.7`), while `@types/react` 18.3.x has 32 releases (up to `18.3.31`). The types packages are independently maintained by DefinitelyTyped contributors and do not track React's patch releases in lockstep. The implementation spec for E01-T03 incorrectly assumed `@types/react-dom@18.3.30` existed — it does not.
+
+**Evidence:** `npm view @types/react-dom versions` shows last 18.3.x as `18.3.7`. `npm view @types/react versions` shows last 18.3.x as `18.3.31`.
+
+**Consequences:**
+
+- Any spec that pins `@types/*` versions must be verified against the npm registry before implementation
+- Future React 19 upgrade tasks must independently verify both `@types/react` and `@types/react-dom` latest versions
+- The version compatibility matrix must list types packages separately from their runtime counterparts
+
+---
+
 ### AD-06: Single Shared `SQLiteConnection` Instance Across Tests
 
 **Decision:** In the spike and in production, a single `SQLiteConnection` instance is created and reused. Multiple connections to the same database use `retrieveConnection()` instead of `createConnection()`.
@@ -279,6 +295,56 @@ npx cap sync
 - Scroll container must have fixed height and `overflow: auto`
 - Rows must use `position: absolute` with `transform: translateY()`
 - Estimated row height: 48px, overscan: 5
+
+---
+
+### PK-07: Renderer UI Dependencies (E01-T03)
+
+| Attribute        | Value                          |
+| ---------------- | ------------------------------ |
+| **Status**       | ADOPTED — scaffold, production |
+| **Package**      | `@collectio/renderer`          |
+| **Runtime Deps** | 12 packages (see below)        |
+| **Dev Deps**     | 4 packages (see below)         |
+
+**Runtime Dependencies:**
+
+| Package                   | Version | Role                            |
+| ------------------------- | ------- | ------------------------------- |
+| `react`                   | 18.3.1  | UI framework                    |
+| `react-dom`               | 18.3.1  | DOM renderer                    |
+| `react-router-dom`        | 6.30.4  | Client-side routing (v6, not v7) |
+| `@tanstack/react-query`   | 5.101.0 | Server state / sync management  |
+| `@tanstack/react-virtual` | 3.14.3  | Virtualized table rendering     |
+| `zustand`                 | 5.0.14  | Client state management         |
+| `@mui/material`           | 6.5.0   | Material UI component library   |
+| `@mui/icons-material`     | 6.5.0   | Material UI icons               |
+| `@emotion/react`          | 11.14.0 | MUI peer dependency (CSS-in-JS) |
+| `@emotion/styled`         | 11.14.1 | MUI peer dependency (styled)    |
+| `immer`                   | 11.1.8  | Zustand peer dep (immutable updates) |
+| `use-sync-external-store` | 1.6.0   | Zustand peer dep (React store sync) |
+
+**Dev Dependencies:**
+
+| Package                | Version  | Role                    |
+| ---------------------- | -------- | ----------------------- |
+| `@collectio/shared`    | workspace:* | Domain types          |
+| `typescript`           | 5.9.3    | Type checker            |
+| `@types/react`         | 18.3.31  | React type definitions  |
+| `@types/react-dom`     | 18.3.7   | React DOM type definitions |
+
+**Key Decisions:**
+
+- **React Router v6** over v7: v7 merged Remix patterns with breaking API changes that don't match the architecture doc's standard `<Route>` component patterns.
+- **MUI v6** over v5 or v7+: v6 supports React 18, is widely adopted, and is stable. v5 is end-of-life. v7+ (and v9) are too recent.
+- **Explicit peer dependencies**: `@emotion/react`, `@emotion/styled`, `immer`, and `use-sync-external-store` are listed as explicit `dependencies` rather than relying on pnpm's `auto-install-peers`. With `node-linker=hoisted`, this ensures they are always available and eliminates install warnings.
+- **`@types/react-dom@18.3.7`**: The latest available 18.3.x version. See AD-07 — the spec incorrectly assumed `18.3.30`.
+
+**Consequences:**
+
+- The renderer package NEVER imports platform-specific implementations (`platform/electron/` or `platform/capacitor/`)
+- Platform providers are injected via React context at the app entry point
+- The tsconfig `paths` alias `@platform` points to `../platform/src` which doesn't exist yet — safe, path aliases are evaluated lazily
 
 ---
 
@@ -799,6 +865,17 @@ function toArrayBuffer(view: Uint8Array): ArrayBuffer {
 | `capacitor-secure-storage-plugin` | 0.10.0           | 6.x             | Community plugin             |
 | `argon2-wasm`                     | 0.9.0            | —               | No peer dep                  |
 | `@tanstack/react-virtual`         | 3.14.3           | —               | Pure JS                      |
+| `@tanstack/react-query`           | 5.101.0          | —               | Peer: `react ^18 \|\| ^19`   |
+| `react-router-dom`                | 6.30.4           | —               | v6, NOT v7                   |
+| `zustand`                         | 5.0.14           | —               | Peer: `immer`, `use-sync-external-store` |
+| `@mui/material`                   | 6.5.0            | —               | Peer: `@emotion/react`, `@emotion/styled` |
+| `@mui/icons-material`             | 6.5.0            | —               | Must match `@mui/material` major.minor |
+| `@emotion/react`                  | 11.14.0          | —               | Explicit dep (MUI peer)      |
+| `@emotion/styled`                 | 11.14.1          | —               | Explicit dep (MUI peer)      |
+| `immer`                           | 11.1.8           | —               | Explicit dep (zustand peer)  |
+| `use-sync-external-store`         | 1.6.0            | —               | Explicit dep (zustand peer)  |
+| `@types/react`                    | 18.3.31          | —               | Latest 18.3.x types          |
+| `@types/react-dom`                | 18.3.7           | —               | Latest 18.3.x types (see AD-07) |
 | `react`                           | 18.3.1           | —               | Scaffold target              |
 | `react-dom`                       | 18.3.1           | —               | Scaffold target              |
 | `typescript`                      | 5.9.3            | —               | Strict mode                  |
