@@ -1,10 +1,10 @@
-# Implementation Decisions — E-00b Capacitor Validation Spike
+# Implementation Decisions — E-00b & E-01
 
-> **Source of Truth:** This document records every technical decision, package selection, rejected approach, platform limitation, known issue, and required configuration discovered during the E-00b Capacitor validation spike.
+> **Source of Truth:** This document records every technical decision, package selection, rejected approach, platform limitation, known issue, and required configuration discovered during the E-00b Capacitor validation spike and E-01 Project Infrastructure scaffolding.
 >
 > **Audience:** Future coding agents, the solo developer, and anyone maintaining this codebase.
 >
-> **Rule:** Before making any change to `apps/capacitor/` or adding a new Capacitor plugin, consult this document. If you encounter a decision recorded here, do not revisit it without new evidence.
+> **Rule:** Before making any change to `apps/capacitor/`, `apps/electron/`, or adding a new Capacitor/Electron plugin, consult this document. If you encounter a decision recorded here, do not revisit it without new evidence.
 
 ---
 
@@ -141,6 +141,71 @@
 - Use `closeAllConnections()` on app shutdown
 
 **Future Considerations:** React Strict Mode in development causes double-mounting. The `isConnection()/retrieveConnection()` pattern handles this correctly.
+
+---
+
+### AD-08: ESM `__dirname` Is Not Available with `"type": "module"` in Electron Main
+
+**Decision:** Every Electron `main.ts` file must explicitly compute `__dirname` from `import.meta.url` using `fileURLToPath` and `dirname`. The bare `__dirname` variable does not exist in ES module scope.
+
+**Reason:** All workspace packages use `"type": "module"` for consistency (ESM imports/exports, `import.meta`). In ES modules, CommonJS globals `__dirname` and `__filename` are not defined. The Electron main process needs `__dirname` to resolve relative paths to `preload.js` and `dist/index.html`. Attempting to use bare `__dirname` causes a TypeScript error (`Cannot find name '__dirname'`) at best and a runtime `ReferenceError` at worst.
+
+**Evidence:** The E01-T05 implementation spec included bare `__dirname` in `main.ts` (an error). The implementation corrected this by computing `__dirname` via `fileURLToPath(import.meta.url)` and `dirname()`. The tsconfig check (`tsc --noEmit`) would have rejected the spec's version.
+
+**Pattern (must be used in every Electron `main.ts`):**
+
+```typescript
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+```
+
+**Consequences:**
+
+- Every `main.ts` must include this boilerplate at the top before any path resolution
+- `preload.ts` does not need `__dirname` (its path is resolved by `main.ts`)
+- If a future task adds a second Electron main process file (e.g., a worker), the same pattern applies
+- The `node:` protocol prefix is mandatory (see AD-T05-08 in the E01-T05 spec)
+
+---
+
+### AD-09: Electron App tsconfig Must Exclude Renderer Source Files
+
+**Decision:** The `apps/electron/tsconfig.json` `include` array must list only `src/main.ts` and `src/preload.ts`. It must NOT include `src/renderer.ts` or use a glob pattern like `["src"]` that would catch it. The renderer source file contains JSX and DOM APIs that the main/preload tsconfig cannot compile.
+
+**Reason:** The Electron app tsconfig targets a Node.js environment (`"lib": ["ES2022"]`, no `"jsx"`, no DOM types). The `renderer.ts` file contains React JSX (`<StrictMode>`, `<div>`) and DOM APIs (`document.getElementById()`), which require `"lib": ["DOM"]` and `"jsx": "react-jsx"`. Including it in `include` forces a choice between two undesirable outcomes:
+
+1. Add DOM libs and JSX to the tsconfig → main/preload lose Node.js-only type safety (M-1 finding)
+2. Keep Node.js-only config → `renderer.ts` fails to compile (JSX parse errors, `document` not found)
+
+The correct resolution is to exclude `renderer.ts` from the app tsconfig entirely. Its type checking is handled by Vite's `@vitejs/plugin-react` at build time.
+
+**Evidence:** The E01-T05 spec contained an internal contradiction: `include: ["src"]` would pick up `renderer.ts`, but `lib: ["ES2022"]` and no `jsx` would reject it. The code review (M-1 finding) identified this. The fix narrowed `include` to `["src/main.ts", "src/preload.ts"]`, resolving the contradiction.
+
+**Consequences:**
+
+- `apps/electron/tsconfig.json` `include` must explicitly list main/preload source files
+- Any new Electron background file (e.g., `src/worker.ts`) must be added to `include`
+- Renderer source files are type-checked by Vite build, not by `tsc --noEmit`
+- This pattern applies to all app packages (`apps/*`) where the tsconfig covers a different environment than some source files
+
+---
+
+### AD-10: `composite: true` and `declaration: false` Are Mutually Exclusive in TypeScript 5.x
+
+**Decision:** App packages (`apps/*`) must omit both `composite: true` and `references` from their tsconfig. App packages are leaf consumers — no other package imports from them — so they do not need project references or composite mode.
+
+**Reason:** TypeScript 5.x reports error "Composite projects may not disable declaration emit" when both `composite: true` and `declaration: false` are set. App packages don't emit declarations (they are consumers, not libraries), but they also shouldn't participate in the composite project graph since they sit at the top of the dependency chain. Removing both settings is the correct resolution — it eliminates the error without losing any functionality.
+
+**Evidence:** AD-T05-07 in the E01-T05 implementation spec pre-authorized this deviation. During implementation, `composite: true` and `references` were omitted and `tsc --noEmit` passed with zero errors across all 6 workspace packages.
+
+**Consequences:**
+
+- `apps/electron/tsconfig.json` and `apps/capacitor/tsconfig.json` must NOT have `composite: true` or `references`
+- `packages/*` (shared, renderer, platform) retain `composite: true` because they are libraries consumed by other packages
+- If a future package needs to import from an app package (unlikely, violates architecture), `composite` would need to be re-enabled and `declaration` set to `true`
 
 ---
 

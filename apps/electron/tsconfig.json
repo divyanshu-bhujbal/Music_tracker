@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "declaration": false,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "paths": {
+      "@shared/*": ["../../packages/shared/src/*"],
+      "@shared": ["../../packages/shared/src"],
+      "@platform/*": ["../../packages/platform/src/*"],
+      "@platform": ["../../packages/platform/src"],
+      "@renderer/*": ["../../packages/renderer/src/*"],
+      "@renderer": ["../../packages/renderer/src"]
+    }
+  },
+  "include": ["src/main.ts", "src/preload.ts"]
+}

@@ -1,0 +1,29 @@
+{
+  "name": "@collectio/electron-app",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "dependencies": {
+    "electron": "30.5.1",
+    "@collectio/renderer": "workspace:*",
+    "@collectio/platform": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "5.4.21",
+    "vite-plugin-electron": "1.0.4",
+    "@vitejs/plugin-react": "4.3.4",
+    "electron-builder": "26.15.5",
+    "typescript": "5.9.3",
+    "@types/node": "20.19.43",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7"
+  }
+}

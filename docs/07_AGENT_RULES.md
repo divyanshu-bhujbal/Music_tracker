@@ -634,4 +634,76 @@ npm view @types/react-dom versions --json | grep "18.3"
 
 ---
 
+## 15. Electron Rules
+
+### Rule 15.1: Main Process tsconfig `include` Must Exclude Renderer Source
+
+**Imperative:** The `apps/electron/tsconfig.json` `include` array must explicitly list only `src/main.ts` and `src/preload.ts`. Never use `"include": ["src"]` or any glob that would capture `src/renderer.ts`.
+
+**Why:** The Electron app tsconfig targets Node.js (`"lib": ["ES2022"]`, no `"jsx"`, no DOM). The renderer file contains React JSX and DOM APIs that cannot compile under those settings. The renderer is type-checked by Vite's `@vitejs/plugin-react` at build time, not by `tsc`. Including it forces adding DOM libs and JSX to the tsconfig, which removes Node.js-only type safety for `main.ts` — a developer could accidentally use `document.getElementById()` in the main process without a compile error.
+
+**Check:** Inspect `apps/electron/tsconfig.json` — `include` must be `["src/main.ts", "src/preload.ts"]` (or a similarly explicit list excluding renderer).
+
+---
+
+### Rule 15.2: Compute `__dirname` from `import.meta.url` — Never Use Bare `__dirname`
+
+**Imperative:** In every Electron main process file (`main.ts`), compute `__dirname` at the top of the file using `fileURLToPath(import.meta.url)` and `dirname()`. Never reference the bare `__dirname` variable.
+
+**Why:** All workspace packages use `"type": "module"`. CommonJS globals `__dirname` and `__filename` are not defined in ES modules. Bare `__dirname` causes a TypeScript error at compile time and a `ReferenceError` at runtime.
+
+**Pattern:**
+
+```typescript
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+```
+
+**Check:** Grep `apps/electron/src/` for `__dirname` without a preceding `const __dirname` declaration in the same file. Any bare `__dirname` reference is an error.
+
+---
+
+### Rule 15.3: `contextIsolation: true` and `nodeIntegration: false` Are Mandatory
+
+**Imperative:** Every `BrowserWindow` created in `main.ts` must set `contextIsolation: true` and `nodeIntegration: false` in `webPreferences`. Never deviate from these defaults.
+
+**Why:** These are Electron security defaults since Electron 12. `contextIsolation` prevents prototype pollution attacks by separating the preload script's `window` from the renderer's. `nodeIntegration: false` prevents the renderer from accessing Node.js APIs directly. All communication between main and renderer must go through the context bridge, which is typed and auditable.
+
+**Check:** Inspect `apps/electron/src/main.ts` — every `new BrowserWindow(...)` must have `contextIsolation: true` and `nodeIntegration: false`.
+
+---
+
+### Rule 15.4: Never Install `vite-plugin-electron-renderer` Unless Required
+
+**Imperative:** Do NOT add `vite-plugin-electron-renderer` to `apps/electron/package.json` devDependencies. It is a peer dependency of `vite-plugin-electron` but is not needed unless the renderer needs Node.js API polyfills (`require`, `__dirname`, `fs`).
+
+**Why:** `vite-plugin-electron-renderer` polyfills Node.js built-in modules in the renderer (web) context, enabling `require()` and direct filesystem access from the React UI. This is a security anti-pattern — it bypasses the context bridge, circumvents `contextIsolation`, and contradicts the architecture's security model. If a specific provider implementation needs Node.js APIs, it should be exposed through the context bridge, not polyfilled directly into the renderer.
+
+**Check:** Inspect `apps/electron/package.json` — `vite-plugin-electron-renderer` must not appear in `dependencies` or `devDependencies`.
+
+---
+
+### Rule 15.5: App Packages Never Use `composite: true` or Project References
+
+**Imperative:** `apps/*/tsconfig.json` files must NOT include `"composite": true` or `"references"`. These are leaf packages — no other package depends on them.
+
+**Why:** TypeScript 5.x errors when `composite: true` is combined with `declaration: false` ("Composite projects may not disable declaration emit"). App packages don't emit declarations (consumers, not libraries) and don't need composite mode. `packages/*` retain `composite: true` because they are libraries.
+
+**Check:** Inspect `apps/electron/tsconfig.json` and `apps/capacitor/tsconfig.json` — neither should contain `"composite"` or `"references"`.
+
+---
+
+### Rule 15.6: Never Add Unused Imports to Verify Package Resolution
+
+**Imperative:** Never add an import statement solely to verify that a package resolves and compiles, if the imported binding is never used. `noUnusedLocals: true` rejects this.
+
+**Why:** The E01-T05 spec included `import { contextBridge } from "electron"` in `preload.ts` to verify electron types resolve. The implementation correctly omitted it because `contextBridge` is never used — `tsc --noEmit` would reject it. Verification that types resolve should rely on existing imports in other files (e.g., `main.ts` already imports from `electron`). If no existing file imports from a package, write a one-line test file instead of adding a dead import to production source.
+
+**Check:** Run `tsc --noEmit` in any package being modified. Any "declared but never read" error on an import-only binding is a violation.
+
+---
+
 _End of Agent Rules_
