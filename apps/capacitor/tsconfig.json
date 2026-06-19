@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
+    "target": "ES2022",
     "module": "ESNext",
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
     "strict": true,
@@ -14,7 +14,19 @@
     "noEmit": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "declaration": false,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "paths": {
+      "@shared/*": ["../../packages/shared/src/*"],
+      "@shared": ["../../packages/shared/src"],
+      "@platform/*": ["../../packages/platform/src/*"],
+      "@platform": ["../../packages/platform/src"],
+      "@renderer/*": ["../../packages/renderer/src/*"],
+      "@renderer": ["../../packages/renderer/src"]
+    }
   },
   "include": ["src"]
 }

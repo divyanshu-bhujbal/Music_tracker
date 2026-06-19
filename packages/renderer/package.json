@@ -7,7 +7,7 @@
   "types": "src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "lint": "echo 'lint not configured yet'",
+    "lint": "eslint src/**/*.{ts,tsx}",
     "test": "echo 'tests not configured yet'",
     "build": "tsc --noEmit"
   },

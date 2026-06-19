@@ -8,6 +8,9 @@ release
 build
 *.tsbuildinfo
 
+# Lint cache
+.eslintcache
+
 # Vite
 .vite
 

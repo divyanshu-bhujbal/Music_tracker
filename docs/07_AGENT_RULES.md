@@ -472,6 +472,24 @@ async function remove(key: string): Promise<void> {
 
 ---
 
+### Rule 9.6: Never Quote Glob Patterns in npm Scripts
+
+**Imperative:** Write glob patterns in npm scripts without quotes. Use `eslint src/**/*.ts`, not `eslint 'src/**/*.ts'` or `eslint "src/**/*.ts"`.
+
+**Why:** Windows PowerShell passes single-quoted strings literally to the command. A pattern like `'src/**/*.ts'` is interpreted as a literal filename containing quote characters, not a glob. The glob is expanded internally by the lint/format tool via `node-glob`, not by the OS shell.
+
+**Pattern:**
+```
+✅ "lint": "eslint src/**/*.ts"
+✅ "lint": "eslint src/**/*.{ts,tsx}"
+❌ "lint": "eslint 'src/**/*.ts'"
+❌ "lint": "eslint \"src/**/*.ts\""
+```
+
+**Check:** If `pnpm lint` reports "No files matching the pattern," check for extraneous quotes in the script definition.
+
+---
+
 ## 10. Android Platform Rules
 
 ### Rule 10.1: Community Plugins Require Manual Registration
@@ -557,6 +575,25 @@ npm view @types/react-dom versions --json | grep "18.3"
 - `composite: true`
 
 **Check:** Diff each new package's tsconfig against `packages/shared/tsconfig.json`. Every option present in shared should be present in the new package (except where intentionally overridden for layer-specific needs like `jsx` or `lib`).
+
+---
+
+### Rule 11.6: All Files Containing JSX Must Use `.tsx` Extension
+
+**Imperative:** Never create a `.ts` file containing JSX. Use `.tsx` for all React components, JSX-containing renderer entries, and any file with `<Component>` syntax. This applies even if the tsconfig has `"jsx": "react-jsx"`.
+
+**Why:** `typescript-eslint` v8 determines JSX parsing mode from file extension, not from `parserOptions.jsx`. `.ts` files are parsed as pure TypeScript and reject JSX syntax with "Parsing error: Unterminated regular expression literal." The `jsx: true` parser option does not override this behavior.
+
+**Pattern:**
+```
+✅ renderer.tsx      — contains JSX, must be .tsx
+✅ Sidebar.tsx       — React component, must be .tsx
+✅ main.ts           — pure TypeScript, no JSX, .ts is correct
+✅ preload.ts        — pure TypeScript, no JSX, .ts is correct
+❌ renderer.ts       — contains JSX but has .ts extension
+```
+
+**Check:** If `pnpm lint` reports "Parsing error: Unterminated regular expression literal" on a file containing JSX, rename the file to `.tsx` and update the lint glob and any script references.
 
 ---
 
@@ -703,6 +740,22 @@ const __dirname = dirname(__filename);
 **Why:** The E01-T05 spec included `import { contextBridge } from "electron"` in `preload.ts` to verify electron types resolve. The implementation correctly omitted it because `contextBridge` is never used — `tsc --noEmit` would reject it. Verification that types resolve should rely on existing imports in other files (e.g., `main.ts` already imports from `electron`). If no existing file imports from a package, write a one-line test file instead of adding a dead import to production source.
 
 **Check:** Run `tsc --noEmit` in any package being modified. Any "declared but never read" error on an import-only binding is a violation.
+
+---
+
+### Rule 15.7: Every Native Capacitor Plugin Must Be a Direct Dependency of `apps/capacitor/`
+
+**Imperative:** Every Capacitor plugin containing native Android code (identified by the presence of an `android/` subdirectory in the npm package) must be listed in `apps/capacitor/package.json` `dependencies`. Do NOT rely on transitive resolution from workspace packages — `cap sync` only detects plugins declared in the app's own `package.json`.
+
+**Why:** `cap sync` scans the capacitor app's declared dependencies to generate `capacitor.settings.gradle`, which includes each detected plugin's native Android source for Gradle compilation. Plugins declared only in `packages/platform/package.json` are invisible to this scan, even though the hoisted `node_modules/` layout makes their source files physically present at the repository root. Without the Gradle include, the plugin's native Java class is not compiled into the APK, and `registerPlugin()` in `MainActivity.java` fails at runtime with `ClassNotFoundException`.
+
+**Pattern:** After adding a new community Capacitor plugin, add it to BOTH packages:
+1. `packages/platform/package.json` — for TypeScript types and JavaScript bridge code
+2. `apps/capacitor/package.json` — for `cap sync` native detection
+
+Then run `cap sync` and verify `capacitor.settings.gradle` includes the new plugin.
+
+**Check:** After every `cap sync`, verify that `capacitor.settings.gradle` lists an `include` for every plugin registered in `MainActivity.java`. If a plugin is registered in Java but missing from Gradle, it will fail silently until runtime.
 
 ---
 

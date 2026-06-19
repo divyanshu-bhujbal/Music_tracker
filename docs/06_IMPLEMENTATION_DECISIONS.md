@@ -209,6 +209,70 @@ The correct resolution is to exclude `renderer.ts` from the app tsconfig entirel
 
 ---
 
+### AD-12: `.tsx` Extension Required for All Files Containing JSX
+
+**Decision:** Use `.tsx` for all TypeScript files containing JSX. Do not use `.ts` for files with JSX even though `tsc` with `"jsx": "react-jsx"` allows it.
+
+**Reason:** `typescript-eslint` v8 determines JSX parsing mode from file extension, not from `parserOptions.jsx`. `.ts` files are parsed as pure TypeScript and reject JSX syntax. This contradicts the T01-T07 spec's claim that ESLint handles JSX in `.ts` *"natively through the TypeScript parser."*
+
+**Evidence:** `pnpm lint` failed with "Unterminated regular expression literal" on `renderer.ts` containing `<div>` JSX. `--print-config` confirmed `parserOptions.jsx: true` was set but had no effect. Renaming to `renderer.tsx` resolved it.
+
+**Consequences:**
+
+- Per-package lint scripts must include `.tsx` in their globs (`src/**/*.{ts,tsx}`), not just `.ts`
+- Any future component file with JSX must use `.tsx`
+- The electron app's `renderer.ts` was renamed to `renderer.tsx` as part of this decision
+
+---
+
+### AD-13: `projectService: true` Is Incompatible with Selective tsconfig `include`
+
+**Decision:** Do not use `projectService: true` in the shared ESLint flat config. This option requires every linted file to be covered by a tsconfig's `include` array.
+
+**Reason:** The electron app's tsconfig intentionally excludes `renderer.tsx` from `include` to maintain `lib: ["ES2022"]` (preventing DOM type access in main/preload). With `projectService: true`, ESLint fails on any file not in a tsconfig. Type-aware linting rules (`no-unsafe-*`) are not critical at scaffolding stage.
+
+**Evidence:** With `projectService: true`, ESLint failed: *"renderer.ts was not found by the project service."* Removing it and relying on `parserOptions.jsx: true` (plus correct file extensions) resolved all lint errors.
+
+**Consequences:**
+
+- If type-aware ESLint rules are needed in the future, create a `tsconfig.eslint.json` covering all source files before enabling `projectService`
+- The current config provides syntax and structural linting (no-explicit-any, no-unused-vars, prefer-const) without type inference
+
+---
+
+### AD-14: Windows PowerShell — Single Quotes in npm Scripts Are Literal
+
+**Decision:** npm script glob patterns must be unquoted (e.g., `eslint src/**/*.ts`, not `eslint 'src/**/*.ts'`). The tool (ESLint, Prettier) handles glob expansion internally via `node-glob`, not via shell expansion.
+
+**Reason:** Windows PowerShell passes single-quoted strings literally to the command. A pattern like `'src/**/*.ts'` is interpreted as a literal filename containing quotes, not a glob.
+
+**Evidence:** `pnpm lint` failed on electron with *"No files matching the pattern `'src/**/*.ts'`"* when single quotes were used. Unquoted patterns in all other packages worked.
+
+**Consequences:**
+
+- All future npm scripts must use unquoted globs
+- This affects `lint`, `test`, and any script using file patterns
+- Cross-platform compatibility requires the tool, not the shell, to expand globs
+
+---
+
+### AD-11: Capacitor Native Plugins Must Be Direct Dependencies of `apps/capacitor/`
+
+**Decision:** Every Capacitor plugin that contains native Android code (an `android/` subdirectory) must be a direct dependency of `apps/capacitor/package.json`. Native plugins declared only in workspace packages like `packages/platform/` are NOT detected by `cap sync` and their native code is NOT compiled into the APK.
+
+**Reason:** `cap sync` generates `capacitor.settings.gradle` by scanning the capacitor app's declared dependencies for Capacitor plugins with native Android source. Plugins that are only declared in workspace packages (`packages/platform/`) are invisible to this scan despite being available in the hoisted `node_modules/` at the repository root. The generated Gradle include is what compiles the native Java code into the APK — without it, `registerPlugin()` in `MainActivity.java` fails at runtime with a `ClassNotFoundException`.
+
+**Evidence:** After `cap sync`, `capacitor.settings.gradle` included `capacitor-community-sqlite` (a direct dep of `apps/capacitor/`) but did NOT include `capacitor-secure-storage-plugin` (only declared in `packages/platform/`). Both plugins have native `android/` directories at root `node_modules/` (thanks to hoisted layout), but only the directly-declared plugin was detected. The E01 T06 implementation spec incorrectly recommended removing `@capacitor-community/sqlite` from the capacitor app's deps — the implementation correctly retained it, but `capacitor-secure-storage-plugin` was also missed.
+
+**Consequences:**
+
+- Every community Capacitor plugin must appear in BOTH `packages/platform/package.json` (for TypeScript types and JavaScript bridge code) AND `apps/capacitor/package.json` (for `cap sync` native detection)
+- Core Capacitor plugins (`@capacitor/core`, `@capacitor/android`, `@capacitor/cli`) are auto-detected and do not follow this rule
+- After any change to `apps/capacitor/package.json` dependencies, run `cap sync` and verify `capacitor.settings.gradle` includes all expected plugins
+- The `capacitor.settings.gradle` include list and `MainActivity.java` `registerPlugin()` list must match — every registered plugin must have a corresponding Gradle include
+
+---
+
 ## 2. Package Decisions
 
 ### PK-01: `@capacitor-community/sqlite` v6.0.2
@@ -573,6 +637,18 @@ npx cap sync
 **Workaround:** Use `isConnection()` to check for existing connections and `retrieveConnection()` to reuse them. See IW-02.
 
 **Scope:** Development mode only. Production builds are not affected. But the defensive code (isConnection/retrieveConnection) is harmless in production and guards against edge cases.
+
+---
+
+### PL-08: Windows PowerShell — Single Quotes in npm Scripts Are Literal
+
+**Limitation:** Windows PowerShell passes single-quoted strings literally to commands. A glob pattern like `'src/**/*.ts'` is passed as a literal filename containing single-quote characters, not expanded as a glob.
+
+**Evidence:** `pnpm lint` failed on the electron package with *"No files matching the pattern `'src/**/*.ts'`"* when single quotes were used. All other packages used unquoted globs and worked correctly.
+
+**Workaround:** Use unquoted glob patterns in all npm scripts. The tool (ESLint, Prettier) handles glob expansion internally via `node-glob`, not via shell expansion.
+
+**Scope:** All platforms. Cross-platform npm scripts must not use shell quoting for glob patterns.
 
 ---
 
