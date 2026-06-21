@@ -5,7 +5,7 @@ const config: Config = {
   testEnvironment: "node",
   roots: ["<rootDir>/src"],
   testMatch: ["**/__tests__/**/*.test.ts"],
-  collectCoverageFrom: ["src/**/*.ts"],
+  collectCoverageFrom: ["src/**/*.ts", "!src/index.ts"],
   coverageThreshold: {
     global: {
       branches: 80,
@@ -18,6 +18,7 @@ const config: Config = {
   coverageReporters: ["text", "text-summary", "lcov", "html"],
   moduleNameMapper: {
     "^@collectio/shared$": "<rootDir>/src",
+    "^(\\.\\.?\\/.*)\\.js$": "$1",
   },
   moduleFileExtensions: ["ts", "js", "json"],
 };
