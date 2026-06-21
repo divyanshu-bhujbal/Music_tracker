@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/**/*.{ts,tsx}",
     "test": "echo 'tests not configured yet'",
+    "clean": "npx rimraf -g dist *.tsbuildinfo",
     "cap:sync": "npx cap sync",
     "cap:open": "npx cap open android"
   },

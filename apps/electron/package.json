@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/**/*.{ts,tsx}",
     "test": "echo 'tests not configured yet'",
+    "clean": "npx rimraf -g dist dist-electron *.tsbuildinfo",
     "pack": "electron-builder --dir",
     "dist": "electron-builder"
   },

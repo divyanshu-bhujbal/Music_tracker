@@ -20,6 +20,7 @@
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
+    "test:watch": "pnpm -r test:watch",
     "clean": "pnpm -r clean"
   }
 }

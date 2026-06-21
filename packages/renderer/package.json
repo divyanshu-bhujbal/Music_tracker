@@ -9,9 +9,11 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/**/*.{ts,tsx}",
     "test": "jest --coverage",
+    "test:watch": "jest --watch",
     "build": "tsc --noEmit && vite build",
     "dev": "vite",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "clean": "npx rimraf -g dist *.tsbuildinfo .vite"
   },
   "dependencies": {
     "react": "18.3.1",
