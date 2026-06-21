@@ -17,7 +17,7 @@
     "declaration": false,
     "sourceMap": true,
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": "../..",
     "paths": {
       "@shared/*": ["../../packages/shared/src/*"],
       "@shared": ["../../packages/shared/src"],

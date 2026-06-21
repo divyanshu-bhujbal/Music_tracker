@@ -144,15 +144,17 @@
 
 ---
 
-### AD-08: ESM `__dirname` Is Not Available with `"type": "module"` in Electron Main
+### AD-08: ESM `__dirname` Is Not Available — Never Use `import.meta.dirname` or Bare `__dirname` in Electron Main
 
-**Decision:** Every Electron `main.ts` file must explicitly compute `__dirname` from `import.meta.url` using `fileURLToPath` and `dirname`. The bare `__dirname` variable does not exist in ES module scope.
+**Decision:** Every file that executes in the Electron main process (including `main.ts`, platform package `electron/` files, and any future main-process workers) must explicitly compute `__dirname` from `import.meta.url` using `fileURLToPath` and `dirname`. Never use `import.meta.dirname` or bare `__dirname` — Electron 30.5.1 bundles Node 20.16.0, which lacks both.
 
-**Reason:** All workspace packages use `"type": "module"` for consistency (ESM imports/exports, `import.meta`). In ES modules, CommonJS globals `__dirname` and `__filename` are not defined. The Electron main process needs `__dirname` to resolve relative paths to `preload.js` and `dist/index.html`. Attempting to use bare `__dirname` causes a TypeScript error (`Cannot find name '__dirname'`) at best and a runtime `ReferenceError` at worst.
+**Reason:** All workspace packages use `"type": "module"` for consistency (ESM imports/exports, `import.meta`). In ES modules, CommonJS globals `__dirname` and `__filename` are not defined. `import.meta.dirname` was added in Node.js 21.2 and backported to Node 20.18+ — but Electron 30.5.1 bundles Node 20.16.0 (confirmed via `npm view electron@30.5.1 --json`, field `_nodeVersion`), which predates the backport. The only safe pattern for Electron 30.5.1 is `fileURLToPath(import.meta.url)` + `dirname()`. Attempting to use bare `__dirname` causes a TypeScript error; attempting to use `import.meta.dirname` causes a runtime `ReferenceError` in Electron.
 
-**Evidence:** The E01-T05 implementation spec included bare `__dirname` in `main.ts` (an error). The implementation corrected this by computing `__dirname` via `fileURLToPath(import.meta.url)` and `dirname()`. The tsconfig check (`tsc --noEmit`) would have rejected the spec's version.
+**Evidence:**
+- E01-T05 — The implementation spec included bare `__dirname` in `main.ts` (an error). Corrected via `fileURLToPath` + `dirname`. `tsc --noEmit` rejects bare `__dirname`.
+- E02-T01 — The verify script in `packages/platform/src/electron/__verify__/` used `import.meta.dirname`, deviating from the codebase standard. Code review identified that `import.meta.dirname` is not guaranteed available in Electron 30's Node.js. Fixed to use the standard `fileURLToPath` + `dirname()` pattern.
 
-**Pattern (must be used in every Electron `main.ts`):**
+**Pattern (must be used in every file that runs in Electron's main process):**
 
 ```typescript
 import { dirname, join } from "node:path";
@@ -164,10 +166,11 @@ const __dirname = dirname(__filename);
 
 **Consequences:**
 
-- Every `main.ts` must include this boilerplate at the top before any path resolution
+- Every Electron main-process file must include this boilerplate at the top before any path resolution — regardless of whether it's `main.ts`, a platform package `electron/` file, or a worker
 - `preload.ts` does not need `__dirname` (its path is resolved by `main.ts`)
-- If a future task adds a second Electron main process file (e.g., a worker), the same pattern applies
+- `import.meta.dirname` is **banned** in this codebase — it causes `ReferenceError` in Electron 30.5.1 (Node 20.16.0)
 - The `node:` protocol prefix is mandatory (see AD-T05-08 in the E01-T05 spec)
+- Path resolution that navigates to `node_modules/` must account for pnpm's hoisted layout — the number of `..` segments depends on the file's depth in the directory tree
 
 ---
 
@@ -270,6 +273,24 @@ The correct resolution is to exclude `renderer.ts` from the app tsconfig entirel
 - Core Capacitor plugins (`@capacitor/core`, `@capacitor/android`, `@capacitor/cli`) are auto-detected and do not follow this rule
 - After any change to `apps/capacitor/package.json` dependencies, run `cap sync` and verify `capacitor.settings.gradle` includes all expected plugins
 - The `capacitor.settings.gradle` include list and `MainActivity.java` `registerPlugin()` list must match — every registered plugin must have a corresponding Gradle include
+
+---
+
+### AD-16: Electron Runtime Node Version Is 20.16.0 — Not System Node.js
+
+**Decision:** Code in `apps/electron/src/` and `packages/platform/src/electron/` executes in Electron's bundled Node 20.16.0, NOT the developer's system Node.js. All Node API usage in these files must target 20.16.0. Verify the exact bundled version via `npm view electron@30.5.1 --json` (field `_nodeVersion`) before using any Node API.
+
+**Reason:** The developer's system Node version is used for CI, pnpm, and development tooling. Electron runs its own bundled Node.js version — for Electron 30.5.1 this is 20.16.0. `tsc` and ESLint check against the system's `@types/node` (e.g., Node 24 types), which declare APIs unavailable in Electron's bundled Node 20.16.0. Code that passes type-checking may crash at runtime.
+
+**Evidence:** E02-T01 verify script used `import.meta.dirname` — passed `tsc --noEmit` (system Node 24 types include it) but would have caused `ReferenceError` at runtime in Electron 30.5.1 (bundled Node 20.16.0 lacks it; requires 20.18+). Fixed in code review.
+
+**Consequences:**
+
+- Before using any Node API in Electron main-process code, verify it exists in Node 20.16.0
+- `import.meta.dirname` and `import.meta.filename` are NOT available (require 20.18+)
+- ES2024+ APIs (`Object.groupBy`, `Array.fromAsync`, `Promise.withResolvers`) are NOT available (require Node 21+)
+- `tsc` strict mode with `lib: ["ES2022"]` already prevents ES2023+ type usage, but runtime-only APIs bypass type checks
+- If Electron is upgraded to a newer major version, the bundled Node version changes — re-verify API availability
 
 ---
 

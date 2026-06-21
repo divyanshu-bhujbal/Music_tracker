@@ -1,6 +1,8 @@
 import { app, BrowserWindow } from 'electron';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writeFileSync } from 'node:fs';
+import { runVerify } from '../../../packages/platform/src/electron/__verify__/better-sqlite3-verify.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -38,7 +40,27 @@ function createWindow(): void {
   });
 }
 
-app.on('ready', createWindow);
+app.on('ready', () => {
+  createWindow();
+
+  // E-02 T-01: better-sqlite3 verification (temporary — revert after verification passes)
+  const dbPath = app.getPath('userData');
+  const report = runVerify(dbPath);
+  console.log(`=== E-02 T-01: better-sqlite3 Verification ===`);
+  console.log(`Package: ${report.packageName}@${report.packageVersion}`);
+  console.log(`Electron: ${report.electronVersion}`);
+  console.log(`Node: ${report.nodeVersion}`);
+  console.log(`Database: ${report.dbPath}`);
+  console.log('');
+  for (const t of report.tests) {
+    console.log(`${t.id}: ${t.status} — ${t.description} — ${t.durationMs.toFixed(1)}ms`);
+  }
+  console.log('');
+  console.log(`Result: ${report.passed}/${report.tests.length} passed. ${report.failed} failed. ${report.errored} errors.`);
+  console.log(`Critical FK test: ${report.criticalFailed ? 'FAIL' : 'PASS'}`);
+  writeFileSync(join(dbPath, 'verify-report.json'), JSON.stringify(report, null, 2));
+  console.log(`Report written to: ${join(dbPath, 'verify-report.json')}`);
+});
 
 app.on('window-all-closed', () => {
   app.quit();

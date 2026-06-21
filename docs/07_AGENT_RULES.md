@@ -683,11 +683,11 @@ npm view @types/react-dom versions --json | grep "18.3"
 
 ---
 
-### Rule 15.2: Compute `__dirname` from `import.meta.url` — Never Use Bare `__dirname`
+### Rule 15.2: Compute `__dirname` from `import.meta.url` — Never Use `import.meta.dirname` or Bare `__dirname`
 
-**Imperative:** In every Electron main process file (`main.ts`), compute `__dirname` at the top of the file using `fileURLToPath(import.meta.url)` and `dirname()`. Never reference the bare `__dirname` variable.
+**Imperative:** In every file that runs in the Electron main process (including `main.ts`, platform package `electron/` files, and any main-process workers), compute `__dirname` at the top of the file using `fileURLToPath(import.meta.url)` and `dirname()`. Never use `import.meta.dirname` or bare `__dirname` — Electron 30.5.1 bundles Node 20.16.0, which lacks both.
 
-**Why:** All workspace packages use `"type": "module"`. CommonJS globals `__dirname` and `__filename` are not defined in ES modules. Bare `__dirname` causes a TypeScript error at compile time and a `ReferenceError` at runtime.
+**Why:** All workspace packages use `"type": "module"`. CommonJS globals `__dirname` and `__filename` are not defined. `import.meta.dirname` was added in Node.js 21.2 (backported to 20.18+) but Electron 30.5.1 bundles Node 20.16.0, which predates the backport. Using `import.meta.dirname` causes a runtime `ReferenceError`. The only safe pattern is `fileURLToPath(import.meta.url)` + `dirname()`.
 
 **Pattern:**
 
@@ -699,7 +699,41 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 ```
 
-**Check:** Grep `apps/electron/src/` for `__dirname` without a preceding `const __dirname` declaration in the same file. Any bare `__dirname` reference is an error.
+**Check:** Grep the codebase for `import.meta.dirname` — must produce zero matches. Grep `apps/electron/src/` and `packages/platform/src/electron/` for `__dirname` without a preceding `const __dirname` declaration in the same file. Any bare `__dirname` reference or `import.meta.dirname` usage is an error.
+
+---
+
+### Rule 15.2b: Electron Main Process Targets Node 20.16.0 — ES2024+ APIs Prohibited
+
+**Imperative:** Code in `apps/electron/src/` and `packages/platform/src/electron/` must use only APIs available in Node 20.16.0 (Electron 30.5.1's bundled runtime). ES2024+ features are prohibited. The developer's system Node version is irrelevant for runtime availability.
+
+**Why:** The developer's system Node.js version (e.g., Node 24) is used for CI, pnpm, and development tooling. Electron runs its own bundled Node — Electron 30.5.1 bundles Node 20.16.0. `tsc` and ESLint check against the system's `@types/node`, which may declare APIs unavailable in Electron's bundled Node. Code that passes type-checking may crash at runtime.
+
+**Banned in Electron main-process files (Node 20.16.0 does NOT have these):**
+
+| API | Available Since | Status |
+|-----|----------------|--------|
+| `import.meta.dirname` | Node 20.18 | ❌ NOT AVAILABLE |
+| `import.meta.filename` | Node 20.18 | ❌ NOT AVAILABLE |
+| `Object.groupBy` | Node 21 | ❌ NOT AVAILABLE |
+| `Map.groupBy` | Node 21 | ❌ NOT AVAILABLE |
+| `Array.fromAsync` | Node 21 | ❌ NOT AVAILABLE |
+| `Promise.withResolvers` | Node 22 | ❌ NOT AVAILABLE |
+| `Float16Array` | Node 22 | ❌ NOT AVAILABLE |
+
+**Allowed in Electron main-process files (Node 20.16.0 has these):**
+
+| API | Available Since |
+|-----|----------------|
+| `fileURLToPath + dirname()` | Node 12 |
+| `process.version`, `process.versions` | Node 0.x |
+| `createRequire(import.meta.url)` | Node 12.2 |
+| `fetch` (global) | Node 18 |
+| `crypto.subtle` | Node 20 (stable) |
+| `String.prototype.isWellFormed` | Node 20.1 |
+| `AbortSignal.timeout()` | Node 17.3 |
+
+**Check:** Run `npm view electron@<version> --json` and inspect `_nodeVersion` to confirm the bundled Node version before using any Node API in main-process files. The `lib: ["ES2022"]` in the electron tsconfig already prevents ES2023+ type usage, but runtime-only APIs bypass type checks.
 
 ---
 
