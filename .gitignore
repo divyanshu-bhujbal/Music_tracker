@@ -70,5 +70,8 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Test coverage
+coverage/
+
 # Docs
 docs/prompts

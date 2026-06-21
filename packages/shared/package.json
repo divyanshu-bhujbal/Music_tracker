@@ -8,10 +8,13 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/**/*.ts",
-    "test": "echo 'tests not configured yet'",
+    "test": "jest --coverage",
     "build": "tsc --noEmit"
   },
   "devDependencies": {
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "jest": "30.4.2",
+    "ts-jest": "29.4.11",
+    "@types/jest": "30.0.0"
   }
 }

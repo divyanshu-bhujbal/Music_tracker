@@ -8,7 +8,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/**/*.{ts,tsx}",
-    "test": "echo 'tests not configured yet'",
+    "test": "jest --coverage",
     "build": "tsc --noEmit && vite build",
     "dev": "vite",
     "preview": "vite preview"
@@ -33,6 +33,13 @@
     "@types/react": "18.3.31",
     "@types/react-dom": "18.3.7",
     "vite": "5.4.21",
-    "@vitejs/plugin-react": "4.3.4"
+    "@vitejs/plugin-react": "4.3.4",
+    "jest": "30.4.2",
+    "ts-jest": "29.4.11",
+    "@types/jest": "30.0.0",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/user-event": "14.6.1",
+    "jest-environment-jsdom": "30.4.1"
   }
 }
