@@ -9,7 +9,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/**/*.{ts,tsx}",
     "test": "echo 'tests not configured yet'",
-    "build": "tsc --noEmit"
+    "build": "tsc --noEmit && vite build",
+    "dev": "vite",
+    "preview": "vite preview"
   },
   "dependencies": {
     "react": "18.3.1",
@@ -29,6 +31,8 @@
     "@collectio/shared": "workspace:*",
     "typescript": "5.9.3",
     "@types/react": "18.3.31",
-    "@types/react-dom": "18.3.7"
+    "@types/react-dom": "18.3.7",
+    "vite": "5.4.21",
+    "@vitejs/plugin-react": "4.3.4"
   }
 }
