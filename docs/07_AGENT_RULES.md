@@ -244,6 +244,29 @@ if (existing.result) {
 
 ---
 
+### Rule 4.6: Cast Capacitor SQLite Plugin Results to Explicit Interfaces
+
+**Imperative:** When calling `db.execute()` or `db.query()` on a `SQLiteDBConnection` from `@capacitor-community/sqlite`, always cast the result to an explicit interface. Never access properties directly on the raw return type.
+
+**Why:** The plugin's TypeScript declarations return loosely-typed objects. The actual result shape nests change counts under `result.changes.changes` and row data under `result.values`. Accessing properties without casting risks runtime `undefined` errors and provides no type safety.
+
+**Pattern:**
+
+```typescript
+interface ExecResult { changes?: { changes?: number; lastId?: number } }
+interface QueryResult { values?: Record<string, unknown>[] }
+
+const result = (await db.execute(sql, false)) as ExecResult;
+const changeCount = result.changes?.changes ?? 0;
+
+const rows = (await db.query(sql)) as QueryResult;
+const values = rows.values ?? [];
+```
+
+**Scope:** Capacitor Android only. Electron's `better-sqlite3` results are strongly typed. See PL-09 for detailed evidence.
+
+---
+
 ## 5. Cryptography Rules
 
 ### Rule 5.1: Encode Passwords as UTF-8 Bytes Before Argon2id

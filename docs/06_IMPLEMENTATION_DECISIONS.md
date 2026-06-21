@@ -673,6 +673,37 @@ npx cap sync
 
 ---
 
+### PL-09: `@capacitor-community/sqlite` Result Shapes Are Nested and Loosely Typed
+
+**Limitation:** `@capacitor-community/sqlite` v6.0.2 returns loosely-typed results that do not match the actual structure returned at runtime. The plugin's TypeScript declarations do not capture the nested property paths — callers must define and cast to explicit interfaces to avoid `undefined` errors.
+
+**Evidence:** E02-T02 verify script confirmed the following result shapes on a physical Android device:
+
+- `db.execute(sql, false)` returns `{ changes?: { changes?: number; lastId?: number } }` — the change count is nested two levels deep under `changes.changes`
+- `db.query(sql)` returns `{ values?: Array<Record<string, unknown>> }` — rows are under `values`, not in a top-level array
+- `db.query('PRAGMA integrity_check')` returns `{ values?: [{ integrity_check: string }] }` — PRAGMA results are in the first element of `values`
+
+These shapes are not documented in the plugin's README or TypeScript declarations. The `.d.ts` file returns generic objects that obscure the actual nesting.
+
+**Workaround:** Define explicit interfaces at each call site (as done in `capacitor-sqlite-verify.ts`):
+
+```typescript
+interface ExecResult { changes?: { changes?: number; lastId?: number } }
+interface QueryResult { values?: Record<string, unknown>[] }
+
+const result = (await db.execute(sql, false)) as ExecResult;
+const changeCount = result.changes?.changes ?? 0;
+
+const rows = (await db.query(sql)) as QueryResult;
+const values = rows.values ?? [];
+```
+
+The production `CapacitorSqliteConnection` (E-02 T-02.5) should encapsulate this casting behind the `DatabaseConnection` interface — callers of the typed interface will never see raw plugin results.
+
+**Scope:** Capacitor Android only. Electron's `better-sqlite3` returns strongly-typed results via `@types/better-sqlite3`. PRAGMAs always use `query()` (PL-01) and return results via `values` (same pattern as SELECT).
+
+---
+
 ## 5. Required Configurations
 
 ### RC-01: `.npmrc` — `node-linker=hoisted`
@@ -773,7 +804,7 @@ public class MainActivity extends BridgeActivity {
 
 **Correct package:** `com.getcapacitor.community.database.sqlite.CapacitorSQLitePlugin` (NOT `com.getcapacitor.community.sqlite.CapacitorSQLite`)
 
-**For secure storage plugin:** `import com.securestorage.capacitor.plugin.SecureStoragePlugin;` and call `registerPlugin(SecureStoragePlugin.class);`
+**For secure storage plugin:** `import com.whitestein.securestorage.SecureStoragePluginPlugin;` and call `registerPlugin(SecureStoragePluginPlugin.class);`
 
 **When to check this:** If any community Capacitor plugin returns null at runtime, verify it is registered in `MainActivity.java`.
 

@@ -47,6 +47,9 @@ importers:
       '@collectio/renderer':
         specifier: workspace:*
         version: link:../../packages/renderer
+      capacitor-secure-storage-plugin:
+        specifier: 0.10.0
+        version: 0.10.0(@capacitor/core@6.2.1)
     devDependencies:
       '@capacitor/android':
         specifier: 6.2.1
