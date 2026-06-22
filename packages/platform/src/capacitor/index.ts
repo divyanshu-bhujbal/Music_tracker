@@ -1,1 +1,1 @@
-export {};
+export { CapacitorSqliteConnection } from './CapacitorSqliteConnection.js';

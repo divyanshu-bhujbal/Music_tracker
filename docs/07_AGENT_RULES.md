@@ -267,6 +267,32 @@ const values = rows.values ?? [];
 
 ---
 
+### Rule 4.7: Route Parameterized DML Through `run()` — `execute()` Does Not Accept Parameters
+
+**Imperative:** When `params` is provided and non-empty, route DML calls to `dbConn.run(sql, params, false)`. Only use `dbConn.execute(sql, false)` when `params` is empty or undefined. Never attempt to pass parameters to `execute()` — its signature is `execute(statements: string, transaction?: boolean)` with no parameter array.
+
+**Why:** The Capacitor SQLite plugin exposes two separate mutation methods. `execute()` does not accept parameter values; `run()` does. Passing params to `execute()` silently discards them — the SQL executes with literal `?` in the statement, causing runtime syntax errors. The plugin's loosely-typed `.d.ts` file does not catch this at compile time.
+
+**Pattern:**
+
+```typescript
+async execute(sql: string, params?: unknown[]): Promise<void> {
+  ensureOpen(this.isOpen);
+  validateInput(sql, params);
+  if (params && params.length > 0) {
+    await this.dbConn!.run(sql, params, false);    // parameterized
+  } else {
+    await this.dbConn!.execute(sql, false);         // unparameterized
+  }
+}
+```
+
+**Check:** Grep `CapacitorSqliteConnection.ts` for `dbConn.execute(` — every call must pass `false` as second argument and must NOT forward params. If params are present in the calling context, `dbConn.run()` must be used instead. Jest mocks for `@capacitor-community/sqlite` must include both `execute` and `run` as mock methods.
+
+**Scope:** Capacitor Android only. Electron's `better-sqlite3` exposes a single `run()` that handles both parameterized and unparameterized statements.
+
+---
+
 ## 5. Cryptography Rules
 
 ### Rule 5.1: Encode Passwords as UTF-8 Bytes Before Argon2id

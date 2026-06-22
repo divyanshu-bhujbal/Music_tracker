@@ -311,7 +311,9 @@ The correct resolution is to exclude `renderer.ts` from the app tsconfig entirel
 
 - Default `isEncryption = true` (SqliteConfig.java) — must explicitly set `androidIsEncryption: false`
 - Requires `registerPlugin(CapacitorSQLitePlugin.class)` in `MainActivity.java`
-- API: `execute(sql, transaction)` — set `transaction: false` for PRAGMAs and auto-commit
+- API: `execute(sql, transaction)` — for unparameterized DML/DDL; does NOT accept parameters
+- API: `run(sql, values, transaction)` — for parameterized DML with `?` placeholders
+- The plugin has TWO mutation methods — `execute()` and `run()` differ only in parameter acceptance. Using `execute()` with params silently discards them, leaving unbound `?` placeholders in the SQL (runtime syntax error)
 - All PRAGMAs must use `query()` not `execute()` on Android
 - Version 5 incompatible with `@capacitor/core@6`; Version 8 incompatible with `@capacitor/core@6`
 
