@@ -7,3 +7,6 @@ export type {
   MigrationReport,
   MigrationStatus,
 } from './data/database/MigrationTypes.js';
+export type { AppMetadataKey } from './domain/models/AppMetadataKey.js';
+export { APP_METADATA_KEYS } from './domain/models/AppMetadataKey.js';
+export { AppMetadataRepository } from './data/repositories/AppMetadataRepository.js';
