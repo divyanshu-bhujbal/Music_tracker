@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Tests access private methods via `as any` for unit testing */
+
 import type { DatabaseConnection } from '../../data/database/DatabaseConnection.js';
 import { DatabaseError } from '../../data/database/DatabaseError.js';
 import { MigrationRunner } from '../../data/database/MigrationRunner.js';
@@ -35,7 +37,7 @@ function createMockDb(options?: {
       }
     }),
 
-    query: jest.fn().mockImplementation(async <T>(sql: string, _params?: unknown[]): Promise<T[]> => {
+    query: jest.fn().mockImplementation(async <T>(sql: string): Promise<T[]> => {
       // schema_version query
       if (sql.includes("SELECT value FROM app_metadata WHERE key = ?")) {
         if (!tableExists) {
