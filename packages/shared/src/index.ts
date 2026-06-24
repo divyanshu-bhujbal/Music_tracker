@@ -41,3 +41,6 @@ export { SongArtistRepository } from './data/repositories/SongArtistRepository.j
 export type { CryptoProvider } from './domain/interfaces/CryptoProvider.js';
 export type { EncryptedData } from './domain/types/EncryptedData.js';
 export { AuthenticationError } from './domain/errors/AuthenticationError.js';
+export { FormatError } from './domain/errors/FormatError.js';
+export { VersionError } from './domain/errors/VersionError.js';
+export { EncryptedFileFormat } from './data/database/EncryptedFileFormat.js';
