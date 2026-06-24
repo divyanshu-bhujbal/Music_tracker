@@ -38,6 +38,7 @@ jest.mock('argon2-wasm', () => {
 });
 
 import { WebCryptoProvider } from '../WebCryptoProvider.js';
+import { AuthenticationError } from '@collectio/shared';
 
 describe('WebCryptoProvider', () => {
   let provider: WebCryptoProvider;
@@ -153,24 +154,205 @@ describe('WebCryptoProvider', () => {
     });
   });
 
-  describe('encryptDatabase (stub)', () => {
-    it('ED-STUB-01: throws not-implemented error', async () => {
+  describe('encryptDatabase', () => {
+    const testKey = new Uint8Array(32).fill(0xab);
+
+    it('EN-01: returns EncryptedData with all three fields', async () => {
+      const db = new Uint8Array(1024).fill(0x42);
+      const result = await provider.encryptDatabase(db, testKey);
+
+      expect(result).toHaveProperty('ciphertext');
+      expect(result).toHaveProperty('nonce');
+      expect(result).toHaveProperty('tag');
+      expect(result.ciphertext).toBeInstanceOf(Uint8Array);
+      expect(result.nonce).toBeInstanceOf(Uint8Array);
+      expect(result.tag).toBeInstanceOf(Uint8Array);
+    });
+
+    it('EN-02: nonce is 12 bytes', async () => {
+      const db = new Uint8Array(1024).fill(0x42);
+      const result = await provider.encryptDatabase(db, testKey);
+
+      expect(result.nonce.length).toBe(12);
+    });
+
+    it('EN-03: tag is 16 bytes', async () => {
+      const db = new Uint8Array(1024).fill(0x42);
+      const result = await provider.encryptDatabase(db, testKey);
+
+      expect(result.tag.length).toBe(16);
+    });
+
+    it('EN-04: two calls produce different nonces', async () => {
+      const db = new Uint8Array(1024).fill(0x42);
+      const result1 = await provider.encryptDatabase(db, testKey);
+      const result2 = await provider.encryptDatabase(db, testKey);
+
+      const same = result1.nonce.every((v, i) => v === result2.nonce[i]);
+      expect(same).toBe(false);
+    });
+
+    it('EN-05: two calls produce different ciphertexts', async () => {
+      const db = new Uint8Array(1024).fill(0x42);
+      const result1 = await provider.encryptDatabase(db, testKey);
+      const result2 = await provider.encryptDatabase(db, testKey);
+
+      const same = result1.ciphertext.every((v, i) => v === result2.ciphertext[i]);
+      expect(same).toBe(false);
+    });
+
+    it('EN-06: empty plaintext succeeds', async () => {
+      const db = new Uint8Array(0);
+      const result = await provider.encryptDatabase(db, testKey);
+
+      expect(result.ciphertext.length).toBe(0);
+      expect(result.nonce.length).toBe(12);
+      expect(result.tag.length).toBe(16);
+    });
+
+    it('EN-07: key not 32 bytes throws TypeError', async () => {
+      const db = new Uint8Array(1024).fill(0x42);
+      const shortKey = new Uint8Array(16).fill(0xab);
+
       await expect(
-        provider.encryptDatabase(new Uint8Array(1), new Uint8Array(32)),
-      ).rejects.toThrow('not yet implemented');
+        provider.encryptDatabase(db, shortKey),
+      ).rejects.toThrow(TypeError);
+    });
+
+    it('EN-08: key not 32 bytes (too long) throws TypeError', async () => {
+      const db = new Uint8Array(1024).fill(0x42);
+      const longKey = new Uint8Array(64).fill(0xab);
+
+      await expect(
+        provider.encryptDatabase(db, longKey),
+      ).rejects.toThrow(TypeError);
     });
   });
 
-  describe('decryptDatabase (stub)', () => {
-    it('DD-STUB-01: throws not-implemented error', async () => {
-      const fakeEncrypted = {
-        ciphertext: new Uint8Array(1),
-        nonce: new Uint8Array(12),
-        tag: new Uint8Array(16),
-      };
+  describe('decryptDatabase', () => {
+    const testKey = new Uint8Array(32).fill(0xab);
+
+    it('DE-01: round-trip encrypt → decrypt', async () => {
+      const db = new Uint8Array(1024).fill(0x42);
+      const encrypted = await provider.encryptDatabase(db, testKey);
+      const decrypted = await provider.decryptDatabase(encrypted, testKey);
+
+      expect(decrypted).toEqual(db);
+    });
+
+    it('DE-02: empty round-trip', async () => {
+      const db = new Uint8Array(0);
+      const encrypted = await provider.encryptDatabase(db, testKey);
+      const decrypted = await provider.decryptDatabase(encrypted, testKey);
+
+      expect(decrypted.length).toBe(0);
+    });
+
+    it('DE-03: wrong key throws AuthenticationError', async () => {
+      const db = new Uint8Array(1024).fill(0x42);
+      const encrypted = await provider.encryptDatabase(db, testKey);
+      const wrongKey = new Uint8Array(32).fill(0xcd);
+
       await expect(
-        provider.decryptDatabase(fakeEncrypted, new Uint8Array(32)),
-      ).rejects.toThrow('not yet implemented');
+        provider.decryptDatabase(encrypted, wrongKey),
+      ).rejects.toThrow(AuthenticationError);
+    });
+
+    it('DE-04: tampered ciphertext throws AuthenticationError', async () => {
+      const db = new Uint8Array(1024).fill(0x42);
+      const encrypted = await provider.encryptDatabase(db, testKey);
+
+      const tampered = {
+        ...encrypted,
+        ciphertext: new Uint8Array(encrypted.ciphertext),
+      };
+      tampered.ciphertext[0] ^= 0xff;
+
+      await expect(
+        provider.decryptDatabase(tampered, testKey),
+      ).rejects.toThrow(AuthenticationError);
+    });
+
+    it('DE-05: modified nonce throws AuthenticationError', async () => {
+      const db = new Uint8Array(1024).fill(0x42);
+      const encrypted = await provider.encryptDatabase(db, testKey);
+
+      const modified = {
+        ...encrypted,
+        nonce: new Uint8Array(encrypted.nonce),
+      };
+      modified.nonce[0] ^= 0xff;
+
+      await expect(
+        provider.decryptDatabase(modified, testKey),
+      ).rejects.toThrow(AuthenticationError);
+    });
+
+    it('DE-06: modified tag throws AuthenticationError', async () => {
+      const db = new Uint8Array(1024).fill(0x42);
+      const encrypted = await provider.encryptDatabase(db, testKey);
+
+      const modified = {
+        ...encrypted,
+        tag: new Uint8Array(encrypted.tag),
+      };
+      modified.tag[0] ^= 0xff;
+
+      await expect(
+        provider.decryptDatabase(modified, testKey),
+      ).rejects.toThrow(AuthenticationError);
+    });
+
+    it('DE-07: nonce not 12 bytes throws TypeError', async () => {
+      const db = new Uint8Array(1024).fill(0x42);
+      const encrypted = await provider.encryptDatabase(db, testKey);
+
+      const badNonce = {
+        ...encrypted,
+        nonce: new Uint8Array(8),
+      };
+
+      await expect(
+        provider.decryptDatabase(badNonce, testKey),
+      ).rejects.toThrow(TypeError);
+    });
+
+    it('DE-08: tag not 16 bytes throws TypeError', async () => {
+      const db = new Uint8Array(1024).fill(0x42);
+      const encrypted = await provider.encryptDatabase(db, testKey);
+
+      const badTag = {
+        ...encrypted,
+        tag: new Uint8Array(8),
+      };
+
+      await expect(
+        provider.decryptDatabase(badTag, testKey),
+      ).rejects.toThrow(TypeError);
+    });
+
+    it('DE-09: key not 32 bytes throws TypeError', async () => {
+      const db = new Uint8Array(1024).fill(0x42);
+      const encrypted = await provider.encryptDatabase(db, testKey);
+      const shortKey = new Uint8Array(16).fill(0xab);
+
+      await expect(
+        provider.decryptDatabase(encrypted, shortKey),
+      ).rejects.toThrow(TypeError);
+    });
+
+    it('DE-10: AuthenticationError has correct name', async () => {
+      const db = new Uint8Array(1024).fill(0x42);
+      const encrypted = await provider.encryptDatabase(db, testKey);
+      const wrongKey = new Uint8Array(32).fill(0xcd);
+
+      try {
+        await provider.decryptDatabase(encrypted, wrongKey);
+        fail('Expected AuthenticationError');
+      } catch (err) {
+        expect(err).toBeInstanceOf(AuthenticationError);
+        expect((err as AuthenticationError).name).toBe('AuthenticationError');
+      }
     });
   });
 });
