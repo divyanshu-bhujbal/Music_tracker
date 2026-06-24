@@ -38,3 +38,4 @@ export type {
 export { SongRepository } from './data/repositories/SongRepository.js';
 export type { SongArtist } from './domain/models/SongArtist.js';
 export { SongArtistRepository } from './data/repositories/SongArtistRepository.js';
+export type { CryptoProvider } from './domain/interfaces/CryptoProvider.js';
