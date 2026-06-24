@@ -202,6 +202,44 @@ describe('EncryptedFileFormat', () => {
         format.pack(db, testKey, testSalt),
       ).rejects.toThrow('crypto failure');
     });
+
+    it('PK-13: encryptDatabase returns wrong nonce length → throws', async () => {
+      const provider: CryptoProvider = {
+        deriveKey: jest.fn(),
+        generateSalt: jest.fn(),
+        async encryptDatabase() {
+          return { ciphertext: new Uint8Array(0), nonce: new Uint8Array(8), tag: new Uint8Array(16) };
+        },
+        async decryptDatabase() {
+          return new Uint8Array(0);
+        },
+      };
+      const format = new EncryptedFileFormat(provider);
+      const db = new Uint8Array(100).fill(0x42);
+
+      await expect(
+        format.pack(db, testKey, testSalt),
+      ).rejects.toThrow('Nonce must be exactly 12 bytes, got 8');
+    });
+
+    it('PK-14: encryptDatabase returns wrong tag length → throws', async () => {
+      const provider: CryptoProvider = {
+        deriveKey: jest.fn(),
+        generateSalt: jest.fn(),
+        async encryptDatabase() {
+          return { ciphertext: new Uint8Array(0), nonce: new Uint8Array(12), tag: new Uint8Array(8) };
+        },
+        async decryptDatabase() {
+          return new Uint8Array(0);
+        },
+      };
+      const format = new EncryptedFileFormat(provider);
+      const db = new Uint8Array(100).fill(0x42);
+
+      await expect(
+        format.pack(db, testKey, testSalt),
+      ).rejects.toThrow('Tag must be exactly 16 bytes, got 8');
+    });
   });
 
   describe('unpack', () => {
