@@ -39,3 +39,5 @@ export { SongRepository } from './data/repositories/SongRepository.js';
 export type { SongArtist } from './domain/models/SongArtist.js';
 export { SongArtistRepository } from './data/repositories/SongArtistRepository.js';
 export type { CryptoProvider } from './domain/interfaces/CryptoProvider.js';
+export type { EncryptedData } from './domain/types/EncryptedData.js';
+export { AuthenticationError } from './domain/errors/AuthenticationError.js';

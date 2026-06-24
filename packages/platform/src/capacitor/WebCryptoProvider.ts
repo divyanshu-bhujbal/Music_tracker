@@ -1,5 +1,5 @@
 import argon2 from 'argon2-wasm';
-import type { CryptoProvider } from '@collectio/shared';
+import type { CryptoProvider, EncryptedData } from '@collectio/shared';
 
 const SALT_BYTES = 32;
 const KEY_BYTES = 32;
@@ -37,14 +37,14 @@ export class WebCryptoProvider implements CryptoProvider {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async encryptDatabase(_db: Uint8Array, _key: Uint8Array): Promise<Uint8Array> {
+  async encryptDatabase(_db: Uint8Array, _key: Uint8Array): Promise<EncryptedData> {
     throw new Error(
       'encryptDatabase not yet implemented — see E03 T03.4',
     );
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async decryptDatabase(_encrypted: Uint8Array, _key: Uint8Array): Promise<Uint8Array> {
+  async decryptDatabase(_data: EncryptedData, _key: Uint8Array): Promise<Uint8Array> {
     throw new Error(
       'decryptDatabase not yet implemented — see E03 T03.4',
     );

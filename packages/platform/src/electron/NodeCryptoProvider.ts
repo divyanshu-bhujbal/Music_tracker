@@ -1,9 +1,12 @@
 import { hash, argon2id } from 'argon2';
-import { randomBytes } from 'node:crypto';
-import type { CryptoProvider } from '@collectio/shared';
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import type { CryptoProvider, EncryptedData } from '@collectio/shared';
+import { AuthenticationError } from '@collectio/shared';
 
 const SALT_BYTES = 32;
 const KEY_BYTES = 32;
+const NONCE_BYTES = 12;
+const TAG_BYTES = 16;
 const TIME_COST = 3;
 const MEMORY_COST = 65536;
 const PARALLELISM = 4;
@@ -33,17 +36,61 @@ export class NodeCryptoProvider implements CryptoProvider {
     return new Uint8Array(randomBytes(SALT_BYTES));
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async encryptDatabase(_db: Uint8Array, _key: Uint8Array): Promise<Uint8Array> {
-    throw new Error(
-      'encryptDatabase not yet implemented — see E03 T03.3',
-    );
+  async encryptDatabase(db: Uint8Array, key: Uint8Array): Promise<EncryptedData> {
+    if (key.length !== KEY_BYTES) {
+      throw new TypeError(
+        `Key must be exactly ${KEY_BYTES} bytes, got ${key.length}`,
+      );
+    }
+
+    const nonce = new Uint8Array(randomBytes(NONCE_BYTES));
+    const cipher = createCipheriv('aes-256-gcm', key, nonce);
+
+    const encrypted = Buffer.concat([
+      cipher.update(db),
+      cipher.final(),
+    ]);
+
+    const tag = new Uint8Array(cipher.getAuthTag());
+
+    return {
+      ciphertext: new Uint8Array(encrypted),
+      nonce,
+      tag,
+    };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async decryptDatabase(_encrypted: Uint8Array, _key: Uint8Array): Promise<Uint8Array> {
-    throw new Error(
-      'decryptDatabase not yet implemented — see E03 T03.3',
-    );
+  async decryptDatabase(data: EncryptedData, key: Uint8Array): Promise<Uint8Array> {
+    if (key.length !== KEY_BYTES) {
+      throw new TypeError(
+        `Key must be exactly ${KEY_BYTES} bytes, got ${key.length}`,
+      );
+    }
+    if (data.nonce.length !== NONCE_BYTES) {
+      throw new TypeError(
+        `Nonce must be exactly ${NONCE_BYTES} bytes, got ${data.nonce.length}`,
+      );
+    }
+    if (data.tag.length !== TAG_BYTES) {
+      throw new TypeError(
+        `Tag must be exactly ${TAG_BYTES} bytes, got ${data.tag.length}`,
+      );
+    }
+
+    const decipher = createDecipheriv('aes-256-gcm', key, data.nonce);
+    decipher.setAuthTag(data.tag);
+
+    try {
+      const decrypted = Buffer.concat([
+        decipher.update(data.ciphertext),
+        decipher.final(),
+      ]);
+
+      return new Uint8Array(decrypted);
+    } catch {
+      throw new AuthenticationError(
+        'Decryption failed: authentication tag mismatch',
+      );
+    }
   }
 }

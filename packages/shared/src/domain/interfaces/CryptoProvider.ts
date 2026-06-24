@@ -1,3 +1,5 @@
+import type { EncryptedData } from '../types/EncryptedData.js';
+
 /**
  * Cryptographic operations interface.
  *
@@ -37,23 +39,25 @@ export interface CryptoProvider {
   /**
    * Encrypt a plaintext database byte array with AES-256-GCM.
    *
-   * Returns ciphertext + nonce + authentication tag concatenated.
+   * Generates a random 12-byte nonce internally. Returns ciphertext, nonce,
+   * and authentication tag as a structured object.
    *
    * @param db - The plaintext database bytes.
    * @param key - A 32-byte AES-256 key from deriveKey().
-   * @returns Encrypted bytes (ciphertext + nonce + tag).
+   * @returns EncryptedData containing ciphertext, nonce, and tag.
    */
-  encryptDatabase(db: Uint8Array, key: Uint8Array): Promise<Uint8Array>;
+  encryptDatabase(db: Uint8Array, key: Uint8Array): Promise<EncryptedData>;
 
   /**
    * Decrypt an encrypted database byte array with AES-256-GCM.
    *
-   * The input must contain ciphertext + nonce + authentication tag
-   * as produced by encryptDatabase().
+   * Uses the provided ciphertext, nonce, and tag to decrypt and verify
+   * authenticity.
    *
-   * @param encrypted - The encrypted bytes (ciphertext + nonce + tag).
+   * @param data - The EncryptedData from encryptDatabase().
    * @param key - A 32-byte AES-256 key from deriveKey().
    * @returns The plaintext database bytes.
+   * @throws {AuthenticationError} If the key is wrong or data is tampered.
    */
-  decryptDatabase(encrypted: Uint8Array, key: Uint8Array): Promise<Uint8Array>;
+  decryptDatabase(data: EncryptedData, key: Uint8Array): Promise<Uint8Array>;
 }

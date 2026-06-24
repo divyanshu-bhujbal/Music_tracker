@@ -163,8 +163,13 @@ describe('WebCryptoProvider', () => {
 
   describe('decryptDatabase (stub)', () => {
     it('DD-STUB-01: throws not-implemented error', async () => {
+      const fakeEncrypted = {
+        ciphertext: new Uint8Array(1),
+        nonce: new Uint8Array(12),
+        tag: new Uint8Array(16),
+      };
       await expect(
-        provider.decryptDatabase(new Uint8Array(1), new Uint8Array(32)),
+        provider.decryptDatabase(fakeEncrypted, new Uint8Array(32)),
       ).rejects.toThrow('not yet implemented');
     });
   });
