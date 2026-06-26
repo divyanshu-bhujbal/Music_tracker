@@ -2,14 +2,14 @@
   "name": "collectio",
   "private": true,
   "devDependencies": {
-    "eslint": "9.39.4",
-    "typescript-eslint": "8.61.1",
-    "@typescript-eslint/parser": "8.61.1",
     "@typescript-eslint/eslint-plugin": "8.61.1",
+    "@typescript-eslint/parser": "8.61.1",
+    "eslint": "9.39.4",
+    "eslint-config-prettier": "10.1.8",
     "eslint-plugin-react": "7.37.5",
     "eslint-plugin-react-hooks": "7.1.1",
-    "eslint-config-prettier": "10.1.8",
-    "prettier": "3.8.4"
+    "prettier": "3.8.4",
+    "typescript-eslint": "8.61.1"
   },
   "scripts": {
     "dev:electron": "pnpm --filter @collectio/electron-app dev",
@@ -22,5 +22,7 @@
     "test": "pnpm -r test",
     "test:watch": "pnpm -r test:watch",
     "clean": "pnpm -r clean"
+  },
+  "dependencies": {
   }
 }

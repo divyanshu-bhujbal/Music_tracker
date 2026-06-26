@@ -1,13 +1,13 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { VerifyRunner } from "@collectio/platform/capacitor/__verify__/VerifyRunner";
+import { AuthVerifyRunner } from "@collectio/platform/capacitor/__verify__/AuthVerifyRunner";
 
 const rootElement = document.getElementById("root");
 
 if (rootElement) {
   createRoot(rootElement).render(
     <StrictMode>
-      <VerifyRunner />
+      <AuthVerifyRunner />
     </StrictMode>,
   );
 } else {

@@ -38,6 +38,12 @@ importers:
       '@capacitor-community/sqlite':
         specifier: 6.0.2
         version: 6.0.2(@capacitor/core@6.2.1)
+      '@capacitor/app':
+        specifier: 6.0.3
+        version: 6.0.3(@capacitor/core@6.2.1)
+      '@capacitor/browser':
+        specifier: 6.0.6
+        version: 6.0.6(@capacitor/core@6.2.1)
       '@capacitor/core':
         specifier: 6.2.1
         version: 6.2.1
@@ -136,9 +142,6 @@ importers:
       capacitor-secure-storage-plugin:
         specifier: 0.10.0
         version: 0.10.0(@capacitor/core@6.2.1)
-      electron:
-        specifier: 30.5.1
-        version: 30.5.1
       electron-store:
         specifier: 11.0.2
         version: 11.0.2
@@ -155,6 +158,9 @@ importers:
       '@types/jest':
         specifier: 30.0.0
         version: 30.0.0
+      electron:
+        specifier: 30.5.1
+        version: 30.5.1
       jest:
         specifier: 30.4.2
         version: 30.4.2(@types/node@20.19.43)(babel-plugin-macros@3.1.0)

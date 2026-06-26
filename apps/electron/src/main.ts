@@ -60,6 +60,35 @@ app.on('ready', () => {
   console.log(`Critical FK test: ${report.criticalFailed ? 'FAIL' : 'PASS'}`);
   writeFileSync(join(dbPath, 'verify-report.json'), JSON.stringify(report, null, 2));
   console.log(`Report written to: ${join(dbPath, 'verify-report.json')}`);
+
+  // E-04 T-04.6: Electron Auth + Storage integration tests (optional — requires VERIFY_AUTH=true)
+  if (process.env.VERIFY_AUTH === 'true') {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      console.error('VERIFY_AUTH=true but GOOGLE_CLIENT_ID is not set. Skipping auth verification.');
+    } else {
+      import('../../../packages/platform/src/electron/__tests__/electron-auth.test.js')
+        .then(({ runAuthVerify }) => {
+          console.log('');
+          console.log('Running E-04 T-04.6: Electron Auth + Storage Integration Tests...');
+          return runAuthVerify({
+            oauth: {
+              clientId,
+              redirectUri: 'http://localhost',
+              scopes: ['https://www.googleapis.com/auth/drive.appdata'],
+            },
+            userDataPath: dbPath,
+          });
+        })
+        .then((authReport) => {
+          console.log('');
+          console.log(`Auth verification complete: ${authReport.passed}/${authReport.tests.length} passed.`);
+        })
+        .catch((err) => {
+          console.error(`Auth verification failed to load: ${err instanceof Error ? err.message : String(err)}`);
+        });
+    }
+  }
 });
 
 app.on('window-all-closed', () => {
