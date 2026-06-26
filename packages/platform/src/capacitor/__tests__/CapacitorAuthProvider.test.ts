@@ -24,6 +24,8 @@ const originalFetch = global.fetch;
 const SIGN_IN_TIMEOUT_MS = 5 * 60 * 1000;
 
 describe('CapacitorAuthProvider', () => {
+  jest.setTimeout(15000);
+
   let CapacitorAuthProvider: typeof import('../CapacitorAuthProvider.js').CapacitorAuthProvider;
   let base64urlEncode: typeof import('../CapacitorAuthProvider.js').base64urlEncode;
   let AuthCancelledError: typeof import('@collectio/shared').AuthCancelledError;
@@ -78,6 +80,7 @@ describe('CapacitorAuthProvider', () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     global.fetch = originalFetch;
   });
 

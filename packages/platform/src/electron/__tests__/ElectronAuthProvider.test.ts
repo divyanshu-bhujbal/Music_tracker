@@ -96,6 +96,10 @@ describe('ElectronAuthProvider', () => {
     mockShell.openExternal.mockResolvedValue(undefined as never);
   });
 
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   describe('UT-01: PKCE code_verifier generation', () => {
     it('generates a valid base64url-encoded 43-character string', () => {
       const verifier = (provider as unknown as { generateCodeVerifier(): string }).generateCodeVerifier();
