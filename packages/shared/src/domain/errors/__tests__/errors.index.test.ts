@@ -1,4 +1,10 @@
-import { AuthenticationError, FormatError, VersionError } from '../index.js';
+import {
+  AuthenticationError,
+  FormatError,
+  VersionError,
+  AuthCancelledError,
+  AuthNetworkError,
+} from '../index.js';
 
 describe('domain/errors barrel', () => {
   it('exports AuthenticationError', () => {
@@ -17,5 +23,17 @@ describe('domain/errors barrel', () => {
     const err = new VersionError('test');
     expect(err).toBeInstanceOf(Error);
     expect(err.name).toBe('VersionError');
+  });
+
+  it('exports AuthCancelledError', () => {
+    const err = new AuthCancelledError('test');
+    expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe('AuthCancelledError');
+  });
+
+  it('exports AuthNetworkError', () => {
+    const err = new AuthNetworkError('test');
+    expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe('AuthNetworkError');
   });
 });

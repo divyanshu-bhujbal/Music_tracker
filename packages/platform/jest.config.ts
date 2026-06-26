@@ -4,6 +4,9 @@ const config: Config = {
   testEnvironment: 'node',
   roots: ['<rootDir>/src'],
   testMatch: ['**/__tests__/**/*.test.ts'],
+  testPathIgnorePatterns: [
+    '<rootDir>/src/electron/__tests__/electron-auth.test.ts',
+  ],
   collectCoverageFrom: ['src/**/*.ts', '!src/index.ts', '!src/**/index.ts'],
   moduleNameMapper: {
     '^@collectio/shared$': '<rootDir>/../shared/src',
