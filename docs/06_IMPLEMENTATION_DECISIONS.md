@@ -71,6 +71,8 @@
 
 **Future Considerations:** The OAuth PKCE flow was not fully verified end-to-end during the spike. Complete OAuth with "Android" client type as a high-priority follow-up.
 
+**Update (E04-T01):** The custom protocol approach (`collectio://` + `app.on('open-url')`) was attempted for Electron in E04-T01 and confirmed invalid for Windows — `open-url` is macOS-only (see PL-10). The "Desktop app" client type with `http://localhost` loopback redirect is NOT optional for Electron — it is the only viable approach. See AD-17 for the full decision record.
+
 ---
 
 ### AD-04: pnpm `node-linker=hoisted` Required for Capacitor
@@ -171,6 +173,31 @@ const __dirname = dirname(__filename);
 - `import.meta.dirname` is **banned** in this codebase — it causes `ReferenceError` in Electron 30.5.1 (Node 20.16.0)
 - The `node:` protocol prefix is mandatory (see AD-T05-08 in the E01-T05 spec)
 - Path resolution that navigates to `node_modules/` must account for pnpm's hoisted layout — the number of `..` segments depends on the file's depth in the directory tree
+
+---
+
+### AD-17: Electron OAuth Redirect Must Use Loopback HTTP Server — Custom Protocols Are Invalid on Windows
+
+**Decision:** All Electron OAuth implementations on Windows must receive the OAuth redirect via a temporary local HTTP server on `http://localhost:<random_port>`. Custom protocol deep-linking (`collectio://`) + `app.on('open-url')` is architecturally invalid for Windows.
+
+**Reason:** `app.on('open-url')` is a macOS-only event (see PL-10). The custom protocol approach proposed in the E04-T01 task specification assumed cross-platform parity for `open-url` — this assumption is false. The loopback HTTP server approach works identically on Windows, macOS, and Linux, and aligns with Google's documented "Desktop app" OAuth flow. AD-03 already anticipated this by specifying "Desktop app" client type with `http://localhost` loopback redirect as the Electron approach, but the E04-T01 task spec chose the custom protocol approach without accounting for the `open-url` platform limitation.
+
+**Evidence:** E04-T01 code review identified that the `waitForAuthCode()` method using `app.on('open-url', handler)` would always time out on Windows. The fix (E04-T01_REVIEW_FIXES.md CR-1) replaces the protocol handler with a loopback server that:
+1. Finds a free port via `createServer().listen(0, '127.0.0.1')`
+2. Constructs the OAuth URL with `redirect_uri=http://localhost:<port>`
+3. Starts an HTTP server to receive the GET callback
+4. Extracts the `code` query parameter from the callback URL
+
+**Consequences:**
+
+- Every Electron OAuth implementation must start a temporary `node:http` server on `http://localhost` with a dynamically discovered free port
+- The redirect URI for Electron OAuth must be `http://localhost:<port>` (NOT a custom scheme like `collectio://`)
+- `app.setAsDefaultProtocolClient('collectio')` must NOT be used for OAuth redirect handling — it serves no purpose in the loopback model
+- The Google Cloud Console OAuth client type for Electron must be "Desktop app" (which permits `http://localhost` without port restriction)
+- The same loopback pattern applies to refreshing tokens or any future OAuth provider on Electron
+- The `findAvailablePort()` helper must use `127.0.0.1` (not `0.0.0.0`) to prevent firewall warnings
+
+**Future Considerations:** If `open-url` is extended to Windows in a future Electron version, the loopback approach remains valid and could coexist. Custom protocols could be re-evaluated as a secondary mechanism, but the loopback approach should remain the primary implementation since it requires no OS-level protocol registration and works identically across all supported desktop platforms.
 
 ---
 
@@ -703,6 +730,23 @@ const values = rows.values ?? [];
 The production `CapacitorSqliteConnection` (E-02 T-02.5) should encapsulate this casting behind the `DatabaseConnection` interface — callers of the typed interface will never see raw plugin results.
 
 **Scope:** Capacitor Android only. Electron's `better-sqlite3` returns strongly-typed results via `@types/better-sqlite3`. PRAGMAs always use `query()` (PL-01) and return results via `values` (same pattern as SELECT).
+
+---
+
+### PL-10: `app.on('open-url')` Is macOS-Only — Does Not Fire on Windows
+
+**Limitation:** `app.on('open-url')` is documented by Electron as a **macOS-only** event. On Windows, when `app.setAsDefaultProtocolClient('collectio')` is used and a deep link is opened:
+- If `app.requestSingleInstanceLock()` is NOT set: a second Electron process spawns with the URL in `process.argv`
+- If `app.requestSingleInstanceLock()` IS set: the `second-instance` event fires on the first instance with the URL in `commandLine`
+- `open-url` never fires on Windows in either case
+
+**Evidence:** E04-T01 code review identified that the custom protocol approach (`collectio://` + `open-url`) would never complete the OAuth flow on Windows. The `waitForAuthCode()` Promise would always time out (5 min) and throw `AuthCancelledError`. This was confirmed against the Electron 30.x API documentation for `app.on('open-url')` which explicitly lists it as a macOS-only event.
+
+**Workaround:** Do NOT use `app.on('open-url')` on Windows. For OAuth redirects, use the loopback HTTP server approach (see AD-03, AD-17). Start a temporary HTTP server on `http://localhost:<random_port>`, register `http://localhost:<port>` as the OAuth redirect URI, and handle the callback via an HTTP request handler.
+
+**Scope:** Windows (Electron). macOS uses `open-url` correctly. Linux behaves similarly to Windows (requires `second-instance` or loopback). The loopback HTTP server approach works identically on all three platforms.
+
+**Future:** If `open-url` is extended to Windows in a future Electron version, this limitation can be revisited. Verify API documentation before any implementation that depends on `open-url`.
 
 ---
 

@@ -412,6 +412,46 @@ recombined.set(tag, ciphertext.length);
 
 ---
 
+### Rule 6.6: Electron OAuth Must Receive Redirects via Loopback HTTP Server
+
+**Imperative:** OAuth implementations for Electron must start a temporary local HTTP server on `http://localhost` with a dynamically discovered free port. The redirect URI must be `http://localhost:<port>`. Never use `app.on('open-url')` for OAuth redirect handling on Windows.
+
+**Why:** `app.on('open-url')` is macOS-only (see PL-10 in 06_IMPLEMENTATION_DECISIONS.md). On Windows, it never fires — OAuth flows that depend on it will always time out. The loopback HTTP server approach works identically on Windows, macOS, and Linux without platform-specific code paths.
+
+**Pattern:**
+```ts
+// 1. Find a free port (helper method)
+function findAvailablePort(): Promise<number> {
+  const srv = createServer();
+  return new Promise((resolve, reject) => {
+    srv.listen(0, '127.0.0.1', () => {
+      const addr = srv.address();
+      srv.close(() => resolve(typeof addr === 'object' && addr ? addr.port : 0));
+    });
+    srv.on('error', reject);
+  });
+}
+
+// 2. Start the callback server with a timeout
+const server = createServer((req, res) => {
+  const code = new URL(req.url ?? '', `http://localhost:${port}`).searchParams.get('code');
+  if (code) {
+    res.writeHead(200);
+    res.end('Success');
+    server.close();
+    resolve(code);
+  }
+});
+server.listen(port, '127.0.0.1');
+
+// 3. Build auth URL with http://localhost:<port> as redirect_uri
+// 4. Open browser via shell.openExternal(authUrl)
+```
+
+**Check:** Grep `packages/platform/src/electron/` for `app.on('open-url'` — must produce zero matches. All Electron OAuth redirects must go through `http://localhost`. Grep for `setAsDefaultProtocolClient` — must NOT be called solely for OAuth redirect handling.
+
+---
+
 ## 7. Storage Rules
 
 ### Rule 7.1: Wrap `remove()` for Idempotent Delete
@@ -664,6 +704,18 @@ npm view @types/react-dom versions --json | grep "18.3"
 
 **Imperative:** Set the in-memory `code_verifier` variable to `null` after the token exchange completes. Verify it was never persisted to localStorage, sessionStorage, or IndexedDB.
 
+**Implementation Note:** The `code_verifier` variable must be declared with `let`, not `const`, to enable reassignment to `null`. Wrap the entire OAuth flow (from code_verifier generation through token persistence) in `try/finally`:
+```ts
+let codeVerifier: string | null = null;
+try {
+  codeVerifier = generateCodeVerifier();
+  // ... full OAuth flow ...
+} finally {
+  codeVerifier = null;
+}
+```
+A `const` declaration prevents nullification and violates this rule even if the variable goes out of scope — explicit nullification via `finally` guarantees zero in-memory persistence on all exit paths (success, cancellation, and failure).
+
 ---
 
 ## 13. Architectural Constraints
@@ -839,6 +891,26 @@ const __dirname = dirname(__filename);
 Then run `cap sync` and verify `capacitor.settings.gradle` includes the new plugin.
 
 **Check:** After every `cap sync`, verify that `capacitor.settings.gradle` lists an `include` for every plugin registered in `MainActivity.java`. If a plugin is registered in Java but missing from Gradle, it will fail silently until runtime.
+
+---
+
+### Rule 15.8: Never Use `app.on('open-url')` for Deep Linking or OAuth on Windows
+
+**Imperative:** Code in `apps/electron/src/` and `packages/platform/src/electron/` must never use `app.on('open-url')` for receiving deep links, protocol redirects, or OAuth callbacks. This event is macOS-only and will never fire on Windows. Use the loopback HTTP server approach for OAuth (Rule 6.6).
+
+**Why:** `open-url` is documented by Electron as a macOS-only event. On Windows, deep link/protocol activation goes through `process.argv` (new process) or `app.on('second-instance')` (single instance lock). Using `open-url` on Windows will silently fail — the handler never fires and any awaiting Promise times out.
+
+**Approved alternatives for Windows:**
+
+| Use Case | Correct Approach |
+|----------|-----------------|
+| OAuth redirect | Loopback HTTP server on `http://localhost:<random_port>` (Rule 6.6) |
+| Custom protocol deep link (if needed) | `app.requestSingleInstanceLock()` + `app.on('second-instance', (event, commandLine) => {...})` |
+| App launch with protocol URL | Parse `process.argv` for protocol scheme on startup |
+
+**Check:** Grep `packages/platform/src/electron/` and `apps/electron/src/` for `open-url` — must produce zero matches. Any `app.on(` call with a string starting with `open-` is a violation.
+
+**Scope:** Windows (Electron). macOS: `open-url` works as documented. If code must support both platforms, use the loopback approach (works everywhere) or guard `open-url` behind a platform check with a Windows-specific fallback. The loopback approach is preferred.
 
 ---
 
