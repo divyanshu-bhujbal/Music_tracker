@@ -3,17 +3,8 @@ import { createServer } from 'node:http';
 import type { Server } from 'node:http';
 import { shell } from 'electron';
 import { OAuth2Client } from 'google-auth-library';
-import type { AuthProvider, AuthTokens, OAuthConfig } from '@collectio/shared';
+import type { AuthProvider, AuthTokens, OAuthConfig, SecureStorageProvider } from '@collectio/shared';
 import { AuthCancelledError, AuthNetworkError } from '@collectio/shared';
-
-// TODO T-04.3: Replace with canonical import from @collectio/shared
-// when ElectronStorageProvider (T-04.3) defines it in packages/shared/src/domain/interfaces/
-export interface SecureStorageProvider {
-  store(key: string, value: string): Promise<void>;
-  retrieve(key: string): Promise<string | null>;
-  delete(key: string): Promise<void>;
-  clear(): Promise<void>;
-}
 
 const STORAGE_KEY_ACCESS_TOKEN = 'auth_access_token';
 const STORAGE_KEY_REFRESH_TOKEN = 'auth_refresh_token';

@@ -40,6 +40,7 @@ export type { SongArtist } from './domain/models/SongArtist.js';
 export { SongArtistRepository } from './data/repositories/SongArtistRepository.js';
 export type { CryptoProvider } from './domain/interfaces/CryptoProvider.js';
 export type { AuthProvider, AuthTokens, OAuthConfig } from './domain/interfaces/AuthProvider.js';
+export type { SecureStorageProvider } from './domain/interfaces/SecureStorageProvider.js';
 export type { EncryptedData } from './domain/types/EncryptedData.js';
 export { AuthenticationError } from './domain/errors/AuthenticationError.js';
 export { AuthCancelledError } from './domain/errors/AuthCancelledError.js';

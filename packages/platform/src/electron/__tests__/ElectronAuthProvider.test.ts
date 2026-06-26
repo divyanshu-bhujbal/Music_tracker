@@ -58,8 +58,8 @@ jest.mock('google-auth-library', () => {
 import { shell } from 'electron';
 import { OAuth2Client } from 'google-auth-library';
 import { ElectronAuthProvider } from '../ElectronAuthProvider.js';
-import type { SecureStorageProvider } from '../ElectronAuthProvider.js';
 import { base64urlEncode } from '../ElectronAuthProvider.js';
+import type { SecureStorageProvider } from '@collectio/shared';
 import { AuthCancelledError, AuthNetworkError } from '@collectio/shared';
 
 const mockShell = jest.mocked(shell);
