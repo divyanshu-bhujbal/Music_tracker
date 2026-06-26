@@ -748,6 +748,60 @@ A `const` declaration prevents nullification and violates this rule even if the 
 
 ---
 
+### Rule 13.5: DI Files Must Load Actual Migration SQL — Never Pass Empty Array
+
+**Imperative:** Both `apps/electron/src/di.ts` and `apps/capacitor/src/di.ts` must load the actual `.sql` migration files and pass them as `Migration[]` to `new MigrationRunner(db, migrations)`. Never pass `[]` (empty array) — the migration system will never execute any migrations.
+
+**Why:** `MigrationRunner` is a platform-agnostic class that receives `Migration[]` from the caller via constructor injection. It does NOT perform file I/O or discover migrations on its own. The DI file is responsible for loading the `.sql` files from `packages/shared/src/data/database/migrations/` and constructing `{ version, sql }` objects. Passing an empty array means no schema tables are ever created, and the database remains at version 0 indefinitely.
+
+**Platform-specific loading:**
+
+| Platform | Mechanism | Location |
+|----------|-----------|----------|
+| Electron | `readFileSync` via `node:fs` + `fileURLToPath`/`dirname` pattern (Rule 15.2) | `apps/electron/src/di.ts` |
+| Capacitor | Vite `?raw` import at build time | `apps/capacitor/src/di.ts` |
+
+**Electron pattern:**
+```ts
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const migrationsDir = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../packages/shared/src/data/database/migrations',
+);
+
+const MIGRATIONS: Migration[] = [
+  { version: 1, sql: readFileSync(join(migrationsDir, '001_core_infrastructure.sql'), 'utf-8') },
+  { version: 2, sql: readFileSync(join(migrationsDir, '002_songs_category.sql'), 'utf-8') },
+];
+```
+
+**Capacitor pattern:**
+```ts
+import migration001 from '../../../../packages/shared/src/data/database/migrations/001_core_infrastructure.sql?raw';
+import migration002 from '../../../../packages/shared/src/data/database/migrations/002_songs_category.sql?raw';
+import type { Migration } from '@collectio/shared';
+
+const MIGRATIONS: Migration[] = [
+  { version: 1, sql: migration001 },
+  { version: 2, sql: migration002 },
+];
+```
+
+A `raw-modules.d.ts` file must exist in the Capacitor app's `src/` with:
+```ts
+declare module '*?raw' {
+  const content: string;
+  export default content;
+}
+```
+
+**Check:** Inspect both DI files. Verify `new MigrationRunner(db, ...)` is not called with `[]`. When a new migration `.sql` file is added, both DI files must be updated to include the new `{ version, sql }` entry.
+
+---
+
 ## 14. Platform-Specific Warnings
 
 ### Warning 14.1: Android vs Electron — PRAGMA Execution

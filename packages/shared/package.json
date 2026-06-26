@@ -13,6 +13,7 @@
     "clean": "npx rimraf -g dist *.tsbuildinfo"
   },
   "devDependencies": {
+    "@collectio/platform": "workspace:*",
     "typescript": "5.9.3",
     "jest": "30.4.2",
     "ts-jest": "29.4.11",

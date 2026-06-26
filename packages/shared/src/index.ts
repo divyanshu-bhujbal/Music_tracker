@@ -48,3 +48,4 @@ export { AuthNetworkError } from './domain/errors/AuthNetworkError.js';
 export { FormatError } from './domain/errors/FormatError.js';
 export { VersionError } from './domain/errors/VersionError.js';
 export { EncryptedFileFormat } from './data/database/EncryptedFileFormat.js';
+export type { ServiceProvider } from './application/ServiceProvider.js';

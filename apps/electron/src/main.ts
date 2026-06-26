@@ -1,13 +1,108 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { writeFileSync } from 'node:fs';
-import { runVerify } from '../../../packages/platform/src/electron/__verify__/better-sqlite3-verify.js';
+import type { ServiceProvider } from '@collectio/shared';
+import { createServices } from './di.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 let mainWindow: BrowserWindow | null = null;
+let services: ServiceProvider | null = null;
+
+/**
+ * Register IPC handlers that the preload bridge calls.
+ * Each handler delegates to the corresponding ServiceProvider method.
+ */
+function registerIpcHandlers(): void {
+  if (!services) return;
+
+  // ── Crypto (Uint8Array ↔ base64 marshalling via Buffer) ───
+  ipcMain.handle('collectio:crypto:deriveKey', async (_e, password: string, saltBase64: string) => {
+    const salt = new Uint8Array(Buffer.from(saltBase64, 'base64'));
+    const key = await services!.cryptoProvider.deriveKey(password, salt);
+    return Buffer.from(key).toString('base64');
+  });
+
+  ipcMain.handle('collectio:crypto:generateSalt', async () => {
+    const salt = services!.cryptoProvider.generateSalt();
+    return Buffer.from(salt).toString('base64');
+  });
+
+  ipcMain.handle(
+    'collectio:crypto:encryptDatabase',
+    async (_e, dbBase64: string, keyBase64: string) => {
+      const db = new Uint8Array(Buffer.from(dbBase64, 'base64'));
+      const key = new Uint8Array(Buffer.from(keyBase64, 'base64'));
+      const result = await services!.cryptoProvider.encryptDatabase(db, key);
+      return {
+        ciphertext: Buffer.from(result.ciphertext).toString('base64'),
+        nonce: Buffer.from(result.nonce).toString('base64'),
+        tag: Buffer.from(result.tag).toString('base64'),
+      };
+    },
+  );
+
+  ipcMain.handle(
+    'collectio:crypto:decryptDatabase',
+    async (
+      _e,
+      encrypted: { ciphertext: string; nonce: string; tag: string },
+      keyBase64: string,
+    ) => {
+      const ciphertext = new Uint8Array(Buffer.from(encrypted.ciphertext, 'base64'));
+      const nonce = new Uint8Array(Buffer.from(encrypted.nonce, 'base64'));
+      const tag = new Uint8Array(Buffer.from(encrypted.tag, 'base64'));
+      const key = new Uint8Array(Buffer.from(keyBase64, 'base64'));
+      const result = await services!.cryptoProvider.decryptDatabase({ ciphertext, nonce, tag }, key);
+      return Buffer.from(result).toString('base64');
+    },
+  );
+
+  // ── Auth ────────────────────────────────────────────────────
+  ipcMain.handle('collectio:auth:signIn', async () => {
+    return services!.authProvider.signIn();
+  });
+
+  ipcMain.handle('collectio:auth:getStoredTokens', async () => {
+    return services!.authProvider.getStoredTokens();
+  });
+
+  ipcMain.handle('collectio:auth:signOut', async () => {
+    await services!.authProvider.signOut();
+  });
+
+  // ── Storage ─────────────────────────────────────────────────
+  ipcMain.handle('collectio:storage:store', async (_e, key: string, value: string) => {
+    await services!.storageProvider.store(key, value);
+  });
+
+  ipcMain.handle('collectio:storage:retrieve', async (_e, key: string) => {
+    return services!.storageProvider.retrieve(key);
+  });
+
+  ipcMain.handle('collectio:storage:delete', async (_e, key: string) => {
+    await services!.storageProvider.delete(key);
+  });
+
+  ipcMain.handle('collectio:storage:clear', async () => {
+    await services!.storageProvider.clear();
+  });
+
+  // ── TokenRefresher ──────────────────────────────────────────
+  ipcMain.handle('collectio:tokenRefresher:getAccessToken', async () => {
+    return services!.tokenRefresher.getAccessToken();
+  });
+
+  ipcMain.handle('collectio:tokenRefresher:needsReauth', async () => {
+    return services!.tokenRefresher.needsReauth;
+  });
+
+  // ── MigrationRunner ─────────────────────────────────────────
+  ipcMain.handle('collectio:migrationRunner:run', async () => {
+    return services!.migrationRunner.run();
+  });
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -41,54 +136,16 @@ function createWindow(): void {
 }
 
 app.on('ready', () => {
-  createWindow();
-
-  // E-02 T-01: better-sqlite3 verification (temporary — revert after verification passes)
-  const dbPath = app.getPath('userData');
-  const report = runVerify(dbPath);
-  console.log(`=== E-02 T-01: better-sqlite3 Verification ===`);
-  console.log(`Package: ${report.packageName}@${report.packageVersion}`);
-  console.log(`Electron: ${report.electronVersion}`);
-  console.log(`Node: ${report.nodeVersion}`);
-  console.log(`Database: ${report.dbPath}`);
-  console.log('');
-  for (const t of report.tests) {
-    console.log(`${t.id}: ${t.status} — ${t.description} — ${t.durationMs.toFixed(1)}ms`);
-  }
-  console.log('');
-  console.log(`Result: ${report.passed}/${report.tests.length} passed. ${report.failed} failed. ${report.errored} errors.`);
-  console.log(`Critical FK test: ${report.criticalFailed ? 'FAIL' : 'PASS'}`);
-  writeFileSync(join(dbPath, 'verify-report.json'), JSON.stringify(report, null, 2));
-  console.log(`Report written to: ${join(dbPath, 'verify-report.json')}`);
-
-  // E-04 T-04.6: Electron Auth + Storage integration tests (optional — requires VERIFY_AUTH=true)
-  if (process.env.VERIFY_AUTH === 'true') {
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    if (!clientId) {
-      console.error('VERIFY_AUTH=true but GOOGLE_CLIENT_ID is not set. Skipping auth verification.');
-    } else {
-      import('../../../packages/platform/src/electron/__tests__/electron-auth.test.js')
-        .then(({ runAuthVerify }) => {
-          console.log('');
-          console.log('Running E-04 T-04.6: Electron Auth + Storage Integration Tests...');
-          return runAuthVerify({
-            oauth: {
-              clientId,
-              redirectUri: 'http://localhost',
-              scopes: ['https://www.googleapis.com/auth/drive.appdata'],
-            },
-            userDataPath: dbPath,
-          });
-        })
-        .then((authReport) => {
-          console.log('');
-          console.log(`Auth verification complete: ${authReport.passed}/${authReport.tests.length} passed.`);
-        })
-        .catch((err) => {
-          console.error(`Auth verification failed to load: ${err instanceof Error ? err.message : String(err)}`);
-        });
-    }
-  }
+  createServices()
+    .then((s) => {
+      services = s;
+      registerIpcHandlers();
+      createWindow();
+    })
+    .catch((err) => {
+      console.error('Failed to initialize platform services:', err);
+      app.quit();
+    });
 });
 
 app.on('window-all-closed', () => {

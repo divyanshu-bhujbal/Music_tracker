@@ -87,6 +87,9 @@ importers:
       '@collectio/renderer':
         specifier: workspace:*
         version: link:../../packages/renderer
+      '@collectio/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       electron:
         specifier: 30.5.1
         version: 30.5.1
@@ -252,6 +255,9 @@ importers:
 
   packages/shared:
     devDependencies:
+      '@collectio/platform':
+        specifier: workspace:*
+        version: link:../platform
       '@types/jest':
         specifier: 30.0.0
         version: 30.0.0

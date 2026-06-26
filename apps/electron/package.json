@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "electron": "30.5.1",
+    "@collectio/shared": "workspace:*",
     "@collectio/renderer": "workspace:*",
     "@collectio/platform": "workspace:*"
   },

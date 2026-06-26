@@ -201,6 +201,32 @@ const __dirname = dirname(__filename);
 
 ---
 
+### AD-18: `packages/shared` Accepts Type-Only Circular Workspace Dependency on `@collectio/platform`
+
+**Decision:** The `packages/shared` workspace package may import types from `@collectio/platform` when a `shared/` interface (such as `ServiceProvider`) needs to reference a class type from a shared platform service (such as `TokenRefresher`). This creates a circular workspace dependency (`shared` → `platform` and `platform` → `shared`). The dependency must be listed as a `devDependency` in `packages/shared/package.json` and the import must be type-only — never a runtime import.
+
+**Reason:** The `ServiceProvider` interface (E-04 T-08) defines the DI contract between platform implementations and the renderer. One of its fields, `tokenRefresher`, references the `TokenRefresher` class — a shared platform service that works identically on both Electron and Capacitor with zero platform dependencies. The alternatives are:
+1. Define a separate `ITokenRefresher` interface in `shared/domain/interfaces/` — duplicates the public API and creates a maintenance burden to keep it in sync with the implementation
+2. Use `any` for the `tokenRefresher` field — loses all type safety for consumers
+3. Import the class type directly — narrow exception to the layer boundary rule
+
+Option 3 was chosen. It works because: the import is type-only (`import type`), it's listed as a `devDependency` (not a runtime dependency), and pnpm's hoisted `node_modules` layout resolves the circular reference without issues.
+
+**Evidence:** E-04 T-08 implementation added `@collectio/platform` as a `devDependency` of `packages/shared`. `ServiceProvider.ts` imports `TokenRefresher` via `import type { TokenRefresher } from '@collectio/platform/shared'`. The workspace graph is `platform → shared` (for interfaces) and `shared → platform` (for `TokenRefresher` type). `pnpm typecheck` passes with zero errors across all 5 packages.
+
+**Consequences:**
+
+- Any `shared/` interface that needs to reference a class type from `@collectio/platform/shared` may follow this pattern
+- The import must be `import type` only — never a runtime import (would break at runtime and violate the layer boundary)
+- The dependency must be listed as `devDependency` in `packages/shared/package.json` — never as a `dependency`
+- This pattern is limited to the `packages/platform/src/shared/` barrel — shared platform services that have zero platform dependencies and work identically on Electron and Capacitor
+- This pattern does NOT permit `shared/` to import from `packages/platform/src/electron/` or `packages/platform/src/capacitor/` — only from the `shared/` barrel
+- If more than 2-3 shared services use this pattern, revisit the decision and extract interfaces to `shared/domain/interfaces/` to eliminate the circular dependency entirely
+
+**Future Considerations:** When `TokenRefresher` is the only consumer, the direct import is acceptable. If a third shared platform service needs this pattern, define `ITokenRefresher` in `shared/domain/interfaces/` and refactor both `ServiceProvider` and `TokenRefresher` to use the interface. The E04-T08 spec Appendix E documents this tradeoff in detail.
+
+---
+
 ### AD-09: Electron App tsconfig Must Exclude Renderer Source Files
 
 **Decision:** The `apps/electron/tsconfig.json` `include` array must list only `src/main.ts` and `src/preload.ts`. It must NOT include `src/renderer.ts` or use a glob pattern like `["src"]` that would catch it. The renderer source file contains JSX and DOM APIs that the main/preload tsconfig cannot compile.

@@ -7,6 +7,9 @@
   "types": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./electron": "./src/electron/index.ts",
+    "./capacitor": "./src/capacitor/index.ts",
+    "./shared": "./src/shared/index.ts",
     "./capacitor/__verify__/VerifyRunner": "./src/capacitor/__verify__/VerifyRunner.tsx",
     "./capacitor/__verify__/capacitor-sqlite-verify": "./src/capacitor/__verify__/capacitor-sqlite-verify.ts",
     "./capacitor/__verify__/capacitor-sqlite-types": "./src/capacitor/__verify__/capacitor-sqlite-types.ts",
