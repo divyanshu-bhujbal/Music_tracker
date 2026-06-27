@@ -391,4 +391,99 @@ describe('SongRepository', () => {
       expect(repo.count()).toBeInstanceOf(Promise);
     });
   });
+
+  describe('findFiltered()', () => {
+    // SR-F-01: findFiltered() with empty filter + default sort
+    it('SR-F-01: queries all active songs with empty filter', async () => {
+      const resultSongs: Song[] = [
+        { id: 's1', name: 'Test', album_name: null, language_id: 1, added_at: '2024-01-01', updated_at: '2024-01-01', deleted_at: null },
+      ];
+      const { mock } = createMockDb({ queryResult: resultSongs });
+      const repo = new SongRepository(mock);
+
+      const result = await repo.findFiltered(
+        { whereClause: '', params: [], joins: [] },
+        { orderByClause: '' },
+      );
+
+      expect(result).toEqual(resultSongs);
+    });
+
+    // SR-F-02: findFiltered() with WHERE clause and no joins
+    it('SR-F-02: includes WHERE clause in SQL', async () => {
+      const { mock, calls } = createMockDb();
+      const repo = new SongRepository(mock);
+
+      await repo.findFiltered(
+        { whereClause: 's.name LIKE \'%\' || ? || \'%\'', params: ['hello'], joins: [] },
+        { orderByClause: '' },
+      );
+
+      const queryCall = calls.find((c) => c.method === 'query');
+      expect(queryCall?.sql).toContain('WHERE deleted_at IS NULL');
+      expect(queryCall?.sql).toContain('AND s.name LIKE');
+      expect(queryCall?.params).toEqual(['hello']);
+    });
+
+    // SR-F-03: findFiltered() with params passed correctly
+    it('SR-F-03: params passed to db.query()', async () => {
+      const { mock, calls } = createMockDb();
+      const repo = new SongRepository(mock);
+
+      await repo.findFiltered(
+        { whereClause: 's.album_name IN (?, ?)', params: ['A', 'B'], joins: [] },
+        { orderByClause: '' },
+      );
+
+      const queryCall = calls.find((c) => c.method === 'query');
+      expect(queryCall?.params).toEqual(['A', 'B']);
+    });
+
+    // SR-F-04: findFiltered() preserves soft-delete filter
+    it('SR-F-04: deleted_at IS NULL always present', async () => {
+      const { mock, calls } = createMockDb();
+      const repo = new SongRepository(mock);
+
+      await repo.findFiltered(
+        { whereClause: 's.name IN (?)', params: ['x'], joins: [] },
+        { orderByClause: '' },
+      );
+
+      const queryCall = calls.find((c) => c.method === 'query');
+      expect(queryCall?.sql).toContain('WHERE deleted_at IS NULL');
+    });
+
+    // SR-F-05: findFiltered() with sort
+    it('SR-F-05: SQL ends with ORDER BY clause', async () => {
+      const { mock, calls } = createMockDb();
+      const repo = new SongRepository(mock);
+
+      await repo.findFiltered(
+        { whereClause: '', params: [], joins: [] },
+        { orderByClause: 'ORDER BY name ASC' },
+      );
+
+      const queryCall = calls.find((c) => c.method === 'query');
+      expect(queryCall?.sql).toContain('ORDER BY name ASC');
+    });
+
+    // SR-F-06: findFiltered() includes JOIN clauses from filter
+    it('SR-F-06: includes JOIN clauses when filter has joins', async () => {
+      const { mock, calls } = createMockDb();
+      const repo = new SongRepository(mock);
+
+      await repo.findFiltered(
+        {
+          whereClause: 'l.name IN (?, ?)',
+          params: ['English', 'Japanese'],
+          joins: ['LEFT JOIN languages l ON s.language_id = l.id'],
+        },
+        { orderByClause: '' },
+      );
+
+      const queryCall = calls.find((c) => c.method === 'query');
+      expect(queryCall?.sql).toContain('LEFT JOIN languages l ON s.language_id = l.id');
+      expect(queryCall?.sql).toContain('WHERE deleted_at IS NULL');
+    });
+  });
 });

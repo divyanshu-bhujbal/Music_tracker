@@ -14,4 +14,5 @@ export {
   useDeleteSong,
   useRestoreSong,
   useCreateArtist,
+  useFilteredSongs,
 } from './useSongsStore.js';

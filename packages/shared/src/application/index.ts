@@ -4,3 +4,7 @@ export { useActiveCategory, useActiveCategoryStore } from './category/useActiveC
 export { useCategoryList } from './category/useCategoryList.js';
 export { useCategorySearchFields } from './category/useCategorySearchFields.js';
 export { SongDuplicateDetector } from './duplicate/SongDuplicateDetector.js';
+export { FilterEngine } from './search/FilterEngine.js';
+export type { FilterResult } from './search/FilterEngine.js';
+export { SortEngine } from './search/SortEngine.js';
+export type { SortResult } from './search/SortEngine.js';

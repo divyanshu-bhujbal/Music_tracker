@@ -1,5 +1,7 @@
 import type { DatabaseConnection } from '../database/DatabaseConnection.js';
 import type { Song, CreateSongInput, UpdateSongInput, SongWithArtists } from '../../domain/models/Song.js';
+import type { FilterResult } from '../../application/search/FilterEngine.js';
+import type { SortResult } from '../../application/search/SortEngine.js';
 
 export class SongRepository {
   private readonly db: DatabaseConnection;
@@ -137,5 +139,24 @@ export class SongRepository {
       'SELECT COUNT(*) AS count FROM songs WHERE deleted_at IS NULL',
     );
     return rows[0].count;
+  }
+
+  async findFiltered(
+    filter: FilterResult,
+    sort: SortResult,
+  ): Promise<Song[]> {
+    const joinClauses = [...new Set(filter.joins)].join(' ');
+    let sql = 'SELECT * FROM songs';
+    if (joinClauses) {
+      sql += ` ${joinClauses}`;
+    }
+    sql += ' WHERE deleted_at IS NULL';
+    if (filter.whereClause) {
+      sql += ` AND ${filter.whereClause}`;
+    }
+    if (sort.orderByClause) {
+      sql += ` ${sort.orderByClause}`;
+    }
+    return this.db.query<Song>(sql, filter.params);
   }
 }

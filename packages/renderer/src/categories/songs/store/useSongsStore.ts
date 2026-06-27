@@ -7,6 +7,8 @@ import { SongRepository } from '@collectio/shared';
 import { ArtistRepository } from '@collectio/shared';
 import { SongArtistRepository } from '@collectio/shared';
 import { LanguageRepository } from '@collectio/shared';
+import { FilterEngine, SortEngine } from '@collectio/shared';
+import { SongsCategory } from '../SongsCategory.js';
 
 let _db: DatabaseConnection | null = null;
 const queryClient = new QueryClient({
@@ -200,6 +202,45 @@ export function useCreateArtist() {
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['artists'] });
+    },
+  });
+}
+
+// ─── Filtered Queries ──────────────────────────────────────────────────────
+
+/**
+ * Fetch songs matching the given search text, column filters, and sort.
+ * Uses FilterEngine and SortEngine to build parameterized SQL.
+ */
+export function useFilteredSongs(
+  searchText: string,
+  columnFilters: Record<string, string[]>,
+  sortKey: string | null,
+  sortDirection: 'asc' | 'desc',
+) {
+  return useQuery({
+    queryKey: ['songs', 'filtered', searchText, columnFilters, sortKey, sortDirection],
+    queryFn: async (): Promise<SongWithArtists[]> => {
+      const filter = FilterEngine.buildFilter(
+        SongsCategory,
+        searchText,
+        columnFilters,
+      );
+      const sort = SortEngine.buildSort(
+        sortKey,
+        sortDirection,
+        SongsCategory.tableColumns,
+      );
+      const repo = getSongRepo();
+      const songs = await repo.findFiltered(filter, sort);
+      const results: SongWithArtists[] = [];
+      for (const song of songs) {
+        const songWithArtists = await repo.findSongWithArtists(song.id);
+        if (songWithArtists) {
+          results.push(songWithArtists);
+        }
+      }
+      return results;
     },
   });
 }

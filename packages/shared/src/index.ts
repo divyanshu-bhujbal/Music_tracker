@@ -61,3 +61,7 @@ export { useActiveCategory, useActiveCategoryStore } from './application/categor
 export { useCategoryList } from './application/category/useCategoryList.js';
 export { useCategorySearchFields } from './application/category/useCategorySearchFields.js';
 export { SongDuplicateDetector } from './application/duplicate/SongDuplicateDetector.js';
+export { FilterEngine } from './application/search/FilterEngine.js';
+export type { FilterResult } from './application/search/FilterEngine.js';
+export { SortEngine } from './application/search/SortEngine.js';
+export type { SortResult } from './application/search/SortEngine.js';
