@@ -12,11 +12,16 @@
     "build": "tsc --noEmit",
     "clean": "npx rimraf -g dist *.tsbuildinfo"
   },
+  "peerDependencies": {
+    "react": "18.3.1",
+    "zustand": "5.0.14"
+  },
   "devDependencies": {
     "@collectio/platform": "workspace:*",
     "typescript": "5.9.3",
     "jest": "30.4.2",
     "ts-jest": "29.4.11",
-    "@types/jest": "30.0.0"
+    "@types/jest": "30.0.0",
+    "@types/react": "18.3.31"
   }
 }

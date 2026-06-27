@@ -49,3 +49,14 @@ export { FormatError } from './domain/errors/FormatError.js';
 export { VersionError } from './domain/errors/VersionError.js';
 export { EncryptedFileFormat } from './data/database/EncryptedFileFormat.js';
 export type { ServiceProvider } from './application/ServiceProvider.js';
+export type {
+  CategoryDefinition,
+  ColumnDefinition,
+  FilterDefinition,
+  DuplicateCheckResult,
+  RepositoryMap,
+} from './domain/interfaces/CategoryDefinition.js';
+export { CategoryRegistry } from './application/category/CategoryRegistry.js';
+export { useActiveCategory, useActiveCategoryStore } from './application/category/useActiveCategory.js';
+export { useCategoryList } from './application/category/useCategoryList.js';
+export { useCategorySearchFields } from './application/category/useCategorySearchFields.js';
