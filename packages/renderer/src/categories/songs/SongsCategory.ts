@@ -1,4 +1,3 @@
-import type { FC } from 'react';
 import type { CategoryDefinition, DuplicateCheckResult } from '@collectio/shared';
 import type { DatabaseConnection } from '@collectio/shared';
 import { SongRepository } from '@collectio/shared';
@@ -8,33 +7,9 @@ import { SongDuplicateDetector } from '@collectio/shared';
 
 import migration002Sql from '../../../../shared/src/data/database/migrations/002_songs_category.sql?raw';
 
-/**
- * Placeholder component for the Create Song form.
- * Will be replaced by a real component in E-07 (Songs UI).
- */
-const PlaceholderCreateForm: FC<{
-  onSave: (item: unknown) => void;
-  onCancel: () => void;
-}> = () => null;
-
-/**
- * Placeholder component for the Edit Song form.
- * Will be replaced by a real component in E-07 (Songs UI).
- */
-const PlaceholderEditForm: FC<{
-  item: unknown;
-  onSave: (item: unknown) => void;
-  onCancel: () => void;
-}> = () => null;
-
-/**
- * Placeholder component for the Song detail view.
- * Will be replaced by a real component in E-07 (Songs UI).
- */
-const PlaceholderDetailView: FC<{
-  item: unknown;
-  onClose: () => void;
-}> = () => null;
+import { SongCreateDialog } from './components/SongCreateDialog.js';
+import { SongEditDialog } from './components/SongEditDialog.js';
+import { SongDetailDialog } from './components/SongDetailDialog.js';
 
 /**
  * Database connection injected via configure().
@@ -79,9 +54,12 @@ export const SongsCategory: CategoryDefinition = {
     { key: 'album_name', label: 'Album', sourceField: 'album_name' },
     { key: 'language_id', label: 'Language', sourceField: 'name' },
   ],
-  createForm: PlaceholderCreateForm,
-  editForm: PlaceholderEditForm,
-  detailView: PlaceholderDetailView,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  createForm: SongCreateDialog as any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  editForm: SongEditDialog as any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  detailView: SongDetailDialog as any,
   duplicateDetector: async (candidate: unknown): Promise<DuplicateCheckResult[]> => {
     if (!_db) {
       throw new Error(
@@ -93,6 +71,14 @@ export const SongsCategory: CategoryDefinition = {
     return detector.checkForDuplicates({ name, artistIds });
   },
 };
+
+/**
+ * Get the configured database connection.
+ * Used by components that need direct DB access.
+ */
+export function getDb(): DatabaseConnection | null {
+  return _db;
+}
 
 /**
  * Configure the Songs category with a database connection.

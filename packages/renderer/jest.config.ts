@@ -13,6 +13,8 @@ const config: Config = {
     "^@platform/(.*)$": "<rootDir>/../platform/src/$1",
     "\\.(css|less|scss|svg|png|jpg|gif)$":
       "<rootDir>/src/__mocks__/fileMock.ts",
+    "^(\\.\\.?\\/.*)\\.js$": "$1",
+    "\\?raw$": "<rootDir>/src/__mocks__/rawMock.ts",
   },
   transform: {
     "^.+\\.tsx?$": "ts-jest",

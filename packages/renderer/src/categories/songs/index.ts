@@ -1,1 +1,27 @@
 export { SongsCategory, configure as configureSongsCategory } from './SongsCategory.js';
+export {
+  SongCreateDialog,
+  SongEditDialog,
+  SongDetailDialog,
+  ArtistAutocomplete,
+  LanguagePicker,
+  DuplicateDetectionDialog,
+  type DuplicateResolution,
+} from './components/index.js';
+export {
+  configureSongsStore,
+  getSongsQueryClient,
+  getDb,
+  getSongRepo,
+  getArtistRepo,
+  getSongArtistRepo,
+  getLanguageRepo,
+  useSongs,
+  useArtists,
+  useLanguages,
+  useCreateSong,
+  useUpdateSong,
+  useDeleteSong,
+  useRestoreSong,
+  useCreateArtist,
+} from './store/index.js';
