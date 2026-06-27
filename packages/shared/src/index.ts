@@ -60,3 +60,4 @@ export { CategoryRegistry } from './application/category/CategoryRegistry.js';
 export { useActiveCategory, useActiveCategoryStore } from './application/category/useActiveCategory.js';
 export { useCategoryList } from './application/category/useCategoryList.js';
 export { useCategorySearchFields } from './application/category/useCategorySearchFields.js';
+export { SongDuplicateDetector } from './application/duplicate/SongDuplicateDetector.js';

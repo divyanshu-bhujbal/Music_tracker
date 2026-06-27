@@ -3,3 +3,4 @@ export { CategoryRegistry } from './category/CategoryRegistry.js';
 export { useActiveCategory, useActiveCategoryStore } from './category/useActiveCategory.js';
 export { useCategoryList } from './category/useCategoryList.js';
 export { useCategorySearchFields } from './category/useCategorySearchFields.js';
+export { SongDuplicateDetector } from './duplicate/SongDuplicateDetector.js';
