@@ -264,6 +264,17 @@ export class CapacitorSqliteConnection implements DatabaseConnection {
     }
   }
 
+  async serialize(): Promise<Uint8Array> {
+    ensureOpen(this.isOpen);
+    // Capacitor SQLite plugin does not expose a native serialize/backup API.
+    // For V1, the SyncEngine uses the serializeDb callback in DI to handle
+    // platform-specific serialization. This stub will be replaced when the
+    // Capacitor plugin adds export support.
+    throw new DatabaseError(
+      'CapacitorSqliteConnection.serialize() is not yet implemented — use the serializeDb DI callback',
+    );
+  }
+
   async transaction<T>(
     fn: (db: DatabaseConnection) => Promise<T>,
   ): Promise<T> {

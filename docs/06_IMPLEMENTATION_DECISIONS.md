@@ -289,6 +289,56 @@ private async fetchWithRetry(
 
 ---
 
+### AD-21: Capacitor SQLite Plugin Has No Native Serialization API — Sync Merge-Copy Is Electron-Only in V1
+
+**Decision:** The `@capacitor-community/sqlite` v6.0.2 plugin does not expose a native database serialization API (no `serialize()`, no `export()` returning raw SQLite bytes). The `CapacitorSqliteConnection.serialize()` method throws `DatabaseError('not yet implemented')`. This means the sync engine's merge-copy flow (E-10 Batch 3) cannot complete on Android — sync works only on Electron in V1.
+
+**Reason:** The Electron implementation uses `better-sqlite3`'s native `db.serialize()` which returns a complete SQLite file as a `Buffer`. The Capacitor plugin bridge communicates via message passing between the WebView and native Android, and does not support exporting raw SQLite file bytes. The plugin's `exportToJson('full')` returns a JSON object with schema and data — this is not a valid SQLite file and requires a JS-level SQLite file writer to reconstruct.
+
+**Evidence:** The `serialize()` method was added to the `DatabaseConnection` interface during the E10 fix cycle. `BetterSqlite3Connection.serialize()` works immediately via the native addon (`new Uint8Array(this.db.serialize())`). The Capacitor implementation was attempted and confirmed not viable without either a JS-level SQLite file writer or plugin enhancement. The method throws explicitly so the V1 gap produces a clean error rather than silently uploading empty or corrupted data. The `SyncEngine.execute()` catch handler correctly handles this: it logs a warning, sets the store to WARNING state, and does NOT modify the live database.
+
+**Consequences:**
+- `SyncEngine.execute()` steps 9a-12 work on Electron but fail on Capacitor at step 9a (`serializeDb(this.db)` throws)
+- The `openInMemoryDb` callback for Capacitor also throws (same root cause)
+- All other sync engine components (DirtyStateTracker, SyncTimer, SyncLock, ChangeTracker, ConflictResolver, useSyncStore) work identically on both platforms
+- `CapacitorSqliteConnection.serialize()` explicitly throws a descriptive error — never returns stub data
+- Capacitor is NOT in a broken state — sync is gracefully degraded; all local operations work normally
+
+**Future Considerations:** To enable Capacitor sync in V1 or V2, implement one of:
+1. JS-level SQLite file writer that reconstructs valid SQLite bytes from `exportToJson('full')` output
+2. Capacitor plugin enhancement to add native `serialize()` via `sqlite3_backup` or equivalent Android API
+3. Alternative approach: encrypt/upload the Capacitor database file directly via Android native filesystem access (though this bypasses the Capacitor plugin isolation — evaluate security implications against the architecture)
+
+---
+
+### AD-22: Sync Merge-Copy Flow — All-Or-Nothing Upload Contract Enforced by In-Memory Copy
+
+**Decision:** `SyncEngine.execute()` must build a complete in-memory merged copy of the database, apply winners and update metadata to that copy only, encrypt the copy, upload it, and ONLY after upload succeeds apply winners to the live database. On any failure before or during upload, the live database must remain completely untouched (the in-memory copy is simply discarded).
+
+**Reason:** The original E10 Batch 3 implementation applied winners directly to the live database, then uploaded, then reverted only `last_successful_sync` on failure. This left the live database in a partially merged state inconsistent with the cloud — violating the 03_SYNC_STATE_MACHINE.md §6 contract ("If any step fails, the sync is aborted and the local database is unchanged"). The fix restructured the flow to build a separate in-memory copy before any modifications.
+
+**Evidence:** E10 review finding C1. The corrected `SyncEngine.execute()` flow:
+1. `liveBytes = await this.serializeDb(this.db)` — serialize current live DB
+2. `mergedDb = await this.openInMemoryDb(liveBytes)` — create in-memory copy with identical schema + data
+3. `await this.applyWinnersToDb(mergedDb, winners)` — apply only to copy
+4. `await this.conflictResolver.resolveOrphans(mergedDb)` — resolve only in copy
+5. Write `last_successful_sync` to copy only
+6. `mergedBytes = await this.serializeDb(mergedDb)` → encrypt → upload
+7. Upload success → `this.applyWinnersToDb(this.db, winners)` + `this.conflictResolver.resolveOrphans(this.db)` — only NOW touch live DB
+8. Upload failure → merged copy discarded by garbage collection; live DB never modified
+
+**Consequences:**
+- Any future sync engine implementation for a new cloud provider must follow this all-or-nothing pattern
+- The `SyncEngine` constructor requires `serializeDb` and `openInMemoryDb` injected callbacks (platform-specific)
+- These callbacks must be provided by the DI layer — the `SyncEngine` itself has zero platform knowledge
+- The in-memory copy uses the same `DatabaseConnection` interface, so `applyWinnersToDb()` works identically on both live and copy
+- The `openInMemoryDb` factory must skip PRAGMA setup (the copy inherits PRAGMAs from the live bytes)
+- The `serializeDb` callback MUST return valid SQLite bytes — returning stub data (empty bytes) corrupts the cloud backup
+
+**Future Considerations:** Any optimization to the merge-copy flow (e.g., V2 chunked upload, incremental sync) must still satisfy the all-or-nothing contract. The pattern of "build copy → modify copy → upload copy → apply to live on success" is the one correct way. Also see AD-21 — this flow currently works only on Electron because Capacitor lacks native serialization.
+
+---
+
 ### AD-09: Electron App tsconfig Must Exclude Renderer Source Files
 
 **Decision:** The `apps/electron/tsconfig.json` `include` array must list only `src/main.ts` and `src/preload.ts`. It must NOT include `src/renderer.ts` or use a glob pattern like `["src"]` that would catch it. The renderer source file contains JSX and DOM APIs that the main/preload tsconfig cannot compile.

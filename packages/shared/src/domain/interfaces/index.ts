@@ -14,3 +14,4 @@ export type {
   DuplicateCheckResult,
   RepositoryMap,
 } from './CategoryDefinition.js';
+export type { NetworkMonitorInterface } from './NetworkMonitorInterface.js';

@@ -9,7 +9,20 @@
 
 import type { ServiceProvider } from '@collectio/shared';
 import type { OAuthConfig, Migration } from '@collectio/shared';
-import { MigrationRunner } from '@collectio/shared';
+import {
+  MigrationRunner,
+  DirtyStateTracker,
+  SyncTimer,
+  SyncLock,
+  ChangeTracker,
+  ConflictResolver,
+  EncryptedFileFormat,
+  AppMetadataRepository,
+  SyncLogRepository,
+  DeviceRepository,
+  AppSettingsRepository,
+} from '@collectio/shared';
+import { SyncEngine } from '@collectio/shared';
 
 import {
   WebCryptoProvider,
@@ -17,7 +30,7 @@ import {
   CapacitorStorageProvider,
   CapacitorSqliteConnection,
 } from '@collectio/platform/capacitor';
-import { TokenRefresher, GoogleDriveProvider, DriveMetadataTracker } from '@collectio/platform/shared';
+import { TokenRefresher, GoogleDriveProvider, DriveMetadataTracker, NetworkMonitor } from '@collectio/platform/shared';
 
 import migration001Sql from '../../../../packages/shared/src/data/database/migrations/001_core_infrastructure.sql?raw';
 import migration002Sql from '../../../../packages/shared/src/data/database/migrations/002_songs_category.sql?raw';
@@ -129,6 +142,57 @@ export async function createServices(): Promise<ServiceProvider> {
       `DI: Failed to read stored tokens: ${err instanceof Error ? err.message : String(err)}`,
     );
     // TokenRefresher starts unseeded — user can sign in later
+  }
+
+  // ── SyncEngine (depends on all above) ────────────────────────
+  console.debug('DI: constructing SyncEngine...');
+  const appMetadataRepo = new AppMetadataRepository(db);
+  const syncLogRepo = new SyncLogRepository(db);
+  const deviceRepo = new DeviceRepository(db);
+  const appSettingsRepo = new AppSettingsRepository(db);
+  const encryptedFileFormat = new EncryptedFileFormat(cryptoProvider);
+  const dirtyStateTracker = new DirtyStateTracker(db);
+  const syncTimer = new SyncTimer(() => {}, 120_000);
+  const syncLock = new SyncLock();
+  const changeTracker = new ChangeTracker(db);
+  const conflictResolver = new ConflictResolver();
+  const networkMonitor = new NetworkMonitor();
+
+  const syncEngine = new SyncEngine(
+    db,
+    encryptedFileFormat,
+    cloudStorageProvider,
+    dirtyStateTracker,
+    syncTimer,
+    syncLock,
+    changeTracker,
+    conflictResolver,
+    networkMonitor,
+    appMetadataRepo,
+    syncLogRepo,
+    deviceRepo,
+    appSettingsRepo,
+    async (conn) => await conn.serialize(),
+    async () => {
+      // V1: Capacitor does not support opening in-memory DB from bytes.
+      // The serializeDb callback throws on Capacitor, preventing the
+      // merge-copy flow. This is acceptable for V1 because the sync
+      // engine will catch the error and log a warning.
+      // A future implementation can use a JS-level SQLite reconstruction.
+      throw new Error('Capacitor openInMemoryDb not yet implemented');
+    },
+    async () => null, // getDerivedKey stub
+  );
+  console.debug('DI: SyncEngine ready');
+
+  // ── Initialize SyncEngine ────────────────────────────────────
+  try {
+    await syncEngine.initialize();
+    console.debug('DI: SyncEngine initialized');
+  } catch (err) {
+    console.warn(
+      `DI: SyncEngine initialization failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   console.info('DI: Platform services initialized (Capacitor)');

@@ -1,0 +1,11 @@
+export { DirtyStateTracker } from './DirtyStateTracker.js';
+export { SyncTimer } from './SyncTimer.js';
+export { SyncLock } from './SyncLock.js';
+export { ChangeTracker } from './ChangeTracker.js';
+export type { TableSchema, EntityChanges, ChangeSet } from './ChangeTracker.js';
+export { ConflictResolver } from './ConflictResolver.js';
+export type { MergeResult, OrphanReport } from './ConflictResolver.js';
+export { SyncEngine } from './SyncEngine.js';
+export type { SyncResult, SyncEngineState } from './SyncEngine.js';
+export { useSyncStore } from './useSyncStore.js';
+export type { SyncState, SyncStoreState } from './useSyncStore.js';

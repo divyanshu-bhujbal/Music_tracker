@@ -47,6 +47,7 @@ export type {
   DownloadResult,
   DriveFileInfo,
 } from './domain/interfaces/CloudStorageProvider.js';
+export type { NetworkMonitorInterface } from './domain/interfaces/NetworkMonitorInterface.js';
 export type { EncryptedData } from './domain/types/EncryptedData.js';
 export { AuthenticationError } from './domain/errors/AuthenticationError.js';
 export { AuthCancelledError } from './domain/errors/AuthCancelledError.js';
@@ -73,3 +74,13 @@ export { FilterEngine } from './application/search/FilterEngine.js';
 export type { FilterResult } from './application/search/FilterEngine.js';
 export { SortEngine } from './application/search/SortEngine.js';
 export type { SortResult } from './application/search/SortEngine.js';
+export { DirtyStateTracker } from './application/sync/DirtyStateTracker.js';
+export { SyncTimer } from './application/sync/SyncTimer.js';
+export { SyncLock } from './application/sync/SyncLock.js';
+export { SyncEngine } from './application/sync/SyncEngine.js';
+export type { SyncResult, SyncEngineState } from './application/sync/SyncEngine.js';
+export { useSyncStore } from './application/sync/useSyncStore.js';
+export type { SyncState, SyncStoreState } from './application/sync/useSyncStore.js';
+export { ChangeTracker } from './application/sync/ChangeTracker.js';
+export { ConflictResolver } from './application/sync/ConflictResolver.js';
+export type { MergeResult, OrphanReport } from './application/sync/ConflictResolver.js';

@@ -31,6 +31,7 @@ function createMockDb(options?: {
 
       return [] as T[];
     }),
+    serialize: jest.fn().mockResolvedValue(new Uint8Array(0)),
     transaction: jest.fn().mockImplementation(
       async <T>(fn: (db: DatabaseConnection) => Promise<T>): Promise<T> => {
         return fn(mock);
@@ -352,6 +353,7 @@ describe('SongDuplicateDetector', () => {
         execute: jest.fn(),
         query: jest.fn().mockRejectedValue(new Error('DB error')),
         transaction: jest.fn(),
+        serialize: jest.fn().mockResolvedValue(new Uint8Array(0)),
       };
       const detector = new SongDuplicateDetector(mock);
 

@@ -14,7 +14,20 @@ import { readFileSync } from 'node:fs';
 
 import type { ServiceProvider } from '@collectio/shared';
 import type { OAuthConfig, Migration } from '@collectio/shared';
-import { MigrationRunner } from '@collectio/shared';
+import {
+  MigrationRunner,
+  DirtyStateTracker,
+  SyncTimer,
+  SyncLock,
+  ChangeTracker,
+  ConflictResolver,
+  EncryptedFileFormat,
+  AppMetadataRepository,
+  SyncLogRepository,
+  DeviceRepository,
+  AppSettingsRepository,
+} from '@collectio/shared';
+import { SyncEngine } from '@collectio/shared';
 
 import {
   NodeCryptoProvider,
@@ -22,7 +35,7 @@ import {
   ElectronStorageProvider,
   BetterSqlite3Connection,
 } from '@collectio/platform/electron';
-import { TokenRefresher, GoogleDriveProvider, DriveMetadataTracker } from '@collectio/platform/shared';
+import { TokenRefresher, GoogleDriveProvider, DriveMetadataTracker, NetworkMonitor } from '@collectio/platform/shared';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -157,6 +170,59 @@ export async function createServices(): Promise<ServiceProvider> {
     );
     // TokenRefresher starts unseeded — user can sign in later
   }
+
+  // ── SyncEngine (depends on all above) ────────────────────────
+  console.debug('DI: constructing SyncEngine...');
+  const appMetadataRepo = new AppMetadataRepository(db);
+  const syncLogRepo = new SyncLogRepository(db);
+  const deviceRepo = new DeviceRepository(db);
+  const appSettingsRepo = new AppSettingsRepository(db);
+  const encryptedFileFormat = new EncryptedFileFormat(cryptoProvider);
+  const dirtyStateTracker = new DirtyStateTracker(db);
+  const syncTimer = new SyncTimer(() => {}, 120_000);
+  const syncLock = new SyncLock();
+  const changeTracker = new ChangeTracker(db);
+  const conflictResolver = new ConflictResolver();
+  const networkMonitor = new NetworkMonitor();
+
+  const syncEngine = new SyncEngine(
+    db,
+    encryptedFileFormat,
+    cloudStorageProvider,
+    dirtyStateTracker,
+    syncTimer,
+    syncLock,
+    changeTracker,
+    conflictResolver,
+    networkMonitor,
+    appMetadataRepo,
+    syncLogRepo,
+    deviceRepo,
+    appSettingsRepo,
+    async (conn) => await conn.serialize(),
+    async (bytes: Uint8Array) => {
+      // Electron: create in-memory DB from serialized bytes using better-sqlite3
+      const buffer = Buffer.from(bytes);
+      return await BetterSqlite3Connection.fromBuffer(buffer);
+    },
+    async () => null, // getDerivedKey stub
+  );
+  console.debug('DI: SyncEngine ready');
+
+  // ── Initialize SyncEngine ────────────────────────────────────
+  try {
+    await syncEngine.initialize();
+    console.debug('DI: SyncEngine initialized');
+  } catch (err) {
+    console.warn(
+      `DI: SyncEngine initialization failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  // ── Wire shutdown sync ────────────────────────────────────────
+  app.on('before-quit', () => {
+    syncEngine.syncOnShutdown();
+  });
 
   console.info('DI: Platform services initialized (Electron)');
 

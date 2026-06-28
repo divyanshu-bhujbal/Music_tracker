@@ -351,6 +351,33 @@ if (response.status === 404) {
 
 ---
 
+### Rule 4.10: `serialize()` Must Throw With Descriptive Error on Platforms That Cannot Serialize — Never Return Stub Data
+
+**Imperative:** Every class implementing `DatabaseConnection` MUST provide a `serialize(): Promise<Uint8Array>` method. If the underlying platform does not support native database serialization (e.g., Capacitor SQLite plugin has no export-to-bytes API), throw a `DatabaseError` with a descriptive message. Never return stub values (`new Uint8Array(0)`, partial JSON, or nil bytes).
+
+**Why:** The sync engine's merge-copy flow depends on `serialize()` to create byte-exact copies of the database. Returning stub bytes would cause the sync engine to encrypt and upload an empty or corrupted file — silently destroying all synced data. Throwing makes the platform gap explicit and allows the sync engine to catch the error cleanly without corrupting cloud state or touching the live database.
+
+**Pattern:**
+```typescript
+// CORRECT — acknowledges V1 limitation explicitly
+async serialize(): Promise<Uint8Array> {
+  throw new DatabaseError(
+    'CapacitorSqliteConnection.serialize() is not yet implemented',
+  );
+}
+
+// INCORRECT — returns stub data that will corrupt cloud state
+async serialize(): Promise<Uint8Array> {
+  return new Uint8Array(0);  // uploaded = empty encrypted blob → data loss
+}
+```
+
+**Check:** Verify every `implements DatabaseConnection` class has a `serialize()` method. For Electron, `better-sqlite3.serialize()` returns a `Buffer` — convert to `Uint8Array`. For Capacitor, the method must throw until a JS-level SQLite file writer or plugin enhancement is available. Never let a `serialize()` call silently succeed with invalid data.
+
+**Scope:** All platforms.
+
+---
+
 ## 5. Cryptography Rules
 
 ### Rule 5.1: Encode Passwords as UTF-8 Bytes Before Argon2id
@@ -860,6 +887,44 @@ declare module '*?raw' {
 
 ---
 
+### Rule 13.6: Use Zustand Stores as a Callback Registry When Shared Modules Need Bidirectional Communication
+
+**Imperative:** When a shared application module (e.g., `SyncEngine`) needs to both push state into a Zustand store AND be called by the store's actions (e.g., `triggerSync()`), use the store as a lightweight callback registry rather than attempting constructor injection of the store into the module or vice versa. The shared module calls `store.getState().setX(this)` during its `initialize()` method. The store's action methods delegate to the registered reference.
+
+**Why:** `SyncEngine` pushes state changes to `useSyncStore` (dirty flag, sync state, error messages) AND the store's `triggerSync()` needs to invoke `SyncEngine.execute()`. This creates a two-way dependency that would cause circular imports if resolved through constructors. Using the store as a registry (a pattern already established by Zustand for external API injection) keeps the store interface stable and avoids circular workspace dependency issues.
+
+**Pattern:**
+```typescript
+// In the store:
+interface SyncStoreState {
+  _syncEngineRef: unknown;  // avoids importing engine type
+  setSyncEngine: (engine: unknown) => void;
+  triggerSync: () => void;
+}
+
+setSyncEngine: (engine: unknown) => {
+  set({ _syncEngineRef: engine });
+},
+
+triggerSync: () => {
+  const state = get();
+  if (state.syncState === 'SYNCING') return;
+  set({ syncState: 'SYNCING', errorMessage: null });
+  if (state._syncEngineRef) {
+    (state._syncEngineRef as { execute: () => void }).execute();
+  }
+},
+
+// In the engine's initialize():
+useSyncStore.getState().setSyncEngine(this);
+```
+
+**Check:** Any shared module + Zustand store pair that needs bidirectional communication should follow this pattern. Do NOT pass the store into the module's constructor (creates circular build dependencies). Do NOT pass the module into `create<State>()` (the store is a module-level singleton and should not capture uninitialized references). The `_` prefix on `_syncEngineRef` indicates a private implementation detail not intended for direct consumer access.
+
+**Scope:** Any shared application module + Zustand store pair within `packages/shared/src/`. This pattern is established by `SyncEngine` + `useSyncStore`.
+
+---
+
 ## 14. Platform-Specific Warnings
 
 ### Warning 14.1: Android vs Electron — PRAGMA Execution
@@ -1065,6 +1130,35 @@ it('retries on 429 then succeeds', async () => {
 **Check:** Search test files for the combination of `jest.useFakeTimers()` + `rejects` — any test that expects the operation to reject after max retries should use the sleep-mock pattern instead of fake timers. Mock cleanup is automatic: `beforeEach` recreates the provider instance from fresh mocks, resetting any instance-level method overrides.
 
 **Scope:** All Jest tests using fake timers with internally-rejecting async operations. This applies to any class that uses `setTimeout`-based backoff internally (e.g., `TokenRefresher`, future `SyncEngine`, future `NetworkMonitor`). The `Math.random` spying pattern (to neutralize jitter) should also be used for success-path retry tests to avoid timing flakiness.
+
+---
+
+### Rule 16.2: Snapshot Database State Before and After Operations That Must Not Modify the Database
+
+**Imperative:** When writing tests that verify an operation did NOT modify the database (upload failure rollback, aborted sync, lock-busy short-circuit), always snapshot the relevant state BEFORE the operation and assert structural equality AFTER. Use `JSON.stringify()` on the data structures or Jest's `.toEqual()` for structural comparison. Do not rely solely on checking `result.success === false` or verifying that a log entry was created — these do not prove the database was untouched.
+
+**Why:** Tests that only check the return value or log state do not verify the core data integrity guarantee: that the live database is unchanged. A bug that partially modifies the database but correctly reports failure would pass a weak test. Snapshots catch partial writes, leftover INSERT/UPDATE/DELETE mutations, and unexpected metadata changes — all of which are silent correctness bugs.
+
+**Pattern:**
+```typescript
+// CORRECT — verifies live DB truly unchanged
+const songsBefore = JSON.stringify(db._tables.get('songs') ?? []);
+const metadataBefore = JSON.stringify(Array.from(db._metadata.entries()));
+
+const result = await engine.execute();
+
+expect(result.success).toBe(false);
+expect(JSON.stringify(db._tables.get('songs') ?? [])).toBe(songsBefore);
+expect(JSON.stringify(Array.from(db._metadata.entries()))).toBe(metadataBefore);
+
+// WEAK — only checks result flag, not actual DB state
+expect(result.success).toBe(false);
+expect(syncLogMarkedAsFailure).toBeDefined();
+```
+
+**Check:** Any test named "failure → live DB unchanged" or "abort → live DB unchanged" or containing "revert" or "rollback" in its description must contain a pre/post state comparison. Grep test file names containing "unchanged" or "revert" — every match must have a snapshot assertion. For mock-based tests like `SyncEngine.test.ts`, snapshot the mock's `_tables` and `_metadata` maps before and after.
+
+**Scope:** All Jest test suites that verify "no side effects on failure" behavior for database-modifying operations.
 
 ---
 

@@ -7,12 +7,13 @@ export interface SqliteDb {
   };
   exec(sql: string): unknown;
   pragma(source: string, options?: { simple?: boolean }): unknown;
+  serialize(): Buffer;
   close(): unknown;
   open: boolean;
 }
 
 export interface DatabaseConstructor {
-  new (filename?: string, options?: Record<string, unknown>): SqliteDb;
+  new (filename?: string | Buffer, options?: Record<string, unknown>): SqliteDb;
 }
 
 export function loadBetterSqlite3(): DatabaseConstructor {

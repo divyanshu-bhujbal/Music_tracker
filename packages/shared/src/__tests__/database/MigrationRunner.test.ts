@@ -64,6 +64,7 @@ function createMockDb(options?: {
       return [] as T[];
     }),
 
+    serialize: jest.fn().mockResolvedValue(new Uint8Array(0)),
     transaction: jest.fn().mockImplementation(
       async <T>(fn: (db: DatabaseConnection) => Promise<T>): Promise<T> => {
         return fn(mock);

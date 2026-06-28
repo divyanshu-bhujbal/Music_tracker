@@ -91,6 +91,34 @@ function validateInput(sql: string, params?: unknown[]): void {
 export class BetterSqlite3Connection implements DatabaseConnection {
   private db: SqliteDb | null = null;
 
+  /**
+   * Create an in-memory instance from a serialized database buffer.
+   * Used by the SyncEngine to create merge copies without touching the live DB.
+   * Skips PRAGMA setup — the copy is temporary and read/write only.
+   */
+  static async fromBuffer(buffer: Buffer): Promise<BetterSqlite3Connection> {
+    let Database: ReturnType<typeof loadBetterSqlite3>;
+    try {
+      Database = loadBetterSqlite3();
+    } catch (err) {
+      throw new ConnectionError(
+        `Failed to load better-sqlite3 native addon: ${String(err)}`,
+        { cause: err },
+      );
+    }
+
+    const conn = new BetterSqlite3Connection();
+    try {
+      conn.db = new Database(buffer);
+    } catch (err) {
+      throw new ConnectionError(
+        `Failed to open in-memory database from buffer: ${String(err)}`,
+        { cause: err },
+      );
+    }
+    return conn;
+  }
+
   async open(dbPath: string): Promise<void> {
     if (this.db) {
       try {
@@ -163,6 +191,19 @@ export class BetterSqlite3Connection implements DatabaseConnection {
       return this.db!.prepare(sql).all(...(params ?? [])) as T[];
     } catch (err) {
       throw mapError(err, sql, params);
+    }
+  }
+
+  async serialize(): Promise<Uint8Array> {
+    this.ensureOpen();
+    try {
+      const buffer = this.db!.serialize();
+      return new Uint8Array(buffer);
+    } catch (err) {
+      throw new DatabaseError(
+        `Failed to serialize database: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err },
+      );
     }
   }
 

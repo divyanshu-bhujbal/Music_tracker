@@ -27,6 +27,7 @@ function createMockDb(executeError?: Error): DatabaseConnection {
       return Promise.resolve([]);
     }),
     transaction: jest.fn(),
+    serialize: jest.fn().mockResolvedValue(new Uint8Array(0)),
   };
 }
 

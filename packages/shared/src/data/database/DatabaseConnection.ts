@@ -91,4 +91,18 @@ export interface DatabaseConnection {
    * @throws {*} Re-throws any error thrown by `fn` after rolling back.
    */
   transaction<T>(fn: (db: DatabaseConnection) => Promise<T>): Promise<T>;
+
+  /**
+   * Serializes the entire SQLite database to a Uint8Array of raw SQLite bytes.
+   *
+   * The returned bytes represent a complete, self-contained SQLite database file
+   * suitable for writing to disk, uploading to cloud storage, or opening as an
+   * in-memory database connection.
+   *
+   * This is a read-only operation — the database is not modified.
+   *
+   * @returns The complete SQLite database file as raw bytes.
+   * @throws {DatabaseError} If serialization fails (database corruption, I/O error).
+   */
+  serialize(): Promise<Uint8Array>;
 }
