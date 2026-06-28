@@ -17,6 +17,7 @@
 import type { CryptoProvider } from '../domain/interfaces/CryptoProvider.js';
 import type { AuthProvider } from '../domain/interfaces/AuthProvider.js';
 import type { SecureStorageProvider } from '../domain/interfaces/SecureStorageProvider.js';
+import type { CloudStorageProvider } from '../domain/interfaces/CloudStorageProvider.js';
 import type { DatabaseConnection } from '../data/database/DatabaseConnection.js';
 import type { MigrationRunner } from '../data/database/MigrationRunner.js';
 import type { TokenRefresher } from '@collectio/platform/shared';
@@ -46,4 +47,7 @@ export interface ServiceProvider {
 
   /** Versioned database migration executor */
   migrationRunner: MigrationRunner;
+
+  /** Cloud file operations (Google Drive in V1) */
+  cloudStorageProvider: CloudStorageProvider;
 }

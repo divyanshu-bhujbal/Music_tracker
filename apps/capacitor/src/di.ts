@@ -17,7 +17,7 @@ import {
   CapacitorStorageProvider,
   CapacitorSqliteConnection,
 } from '@collectio/platform/capacitor';
-import { TokenRefresher } from '@collectio/platform/shared';
+import { TokenRefresher, GoogleDriveProvider, DriveMetadataTracker } from '@collectio/platform/shared';
 
 import migration001Sql from '../../../../packages/shared/src/data/database/migrations/001_core_infrastructure.sql?raw';
 import migration002Sql from '../../../../packages/shared/src/data/database/migrations/002_songs_category.sql?raw';
@@ -87,6 +87,16 @@ export async function createServices(): Promise<ServiceProvider> {
   const tokenRefresher = new TokenRefresher(authProvider);
   console.debug('DI: TokenRefresher ready');
 
+  // ── DriveMetadataTracker (depends on DatabaseConnection) ───
+  console.debug('DI: constructing DriveMetadataTracker...');
+  const driveMetadataTracker = new DriveMetadataTracker(db);
+  console.debug('DI: DriveMetadataTracker ready');
+
+  // ── GoogleDriveProvider (depends on TokenRefresher + DriveMetadataTracker) ──
+  console.debug('DI: constructing GoogleDriveProvider...');
+  const cloudStorageProvider = new GoogleDriveProvider(tokenRefresher, driveMetadataTracker);
+  console.debug('DI: GoogleDriveProvider ready');
+
   // ── MigrationRunner (depends on DatabaseConnection) ────────
   console.debug('DI: constructing MigrationRunner...');
   const migrationRunner = new MigrationRunner(db, CAPACITOR_MIGRATIONS);
@@ -130,5 +140,6 @@ export async function createServices(): Promise<ServiceProvider> {
     db,
     tokenRefresher,
     migrationRunner,
+    cloudStorageProvider,
   };
 }

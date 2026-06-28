@@ -56,6 +56,40 @@ export class TokenRefresher {
     this.pendingRefresh = null;
   }
 
+  /**
+   * Force-refresh the access token regardless of expiry.
+   *
+   * Unlike getAccessToken(), this always calls refreshAccessToken
+   * on the AuthProvider — it does not check freshness or backoff.
+   * Used by GoogleDriveProvider when it receives an HTTP 401 with
+   * a token that may still appear valid.
+   */
+  async forceRefreshAccessToken(): Promise<string | null> {
+    if (this.refreshToken === null) {
+      return null;
+    }
+
+    try {
+      const result =
+        await this.authProvider.refreshAccessToken(this.refreshToken);
+
+      this.accessToken = result.accessToken;
+      this.expiresAt = result.expiresAt;
+      this.backoffCounter = 0;
+      this.backoffUntil = null;
+      this._needsReauth = false;
+
+      console.debug('TokenRefresher: forced refresh successful');
+      return this.accessToken;
+    } catch (error) {
+      console.warn(
+        `TokenRefresher: forced refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      this._needsReauth = true;
+      return null;
+    }
+  }
+
   clear(): void {
     this.accessToken = null;
     this.refreshToken = null;

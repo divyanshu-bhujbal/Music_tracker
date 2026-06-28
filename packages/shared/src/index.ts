@@ -41,10 +41,18 @@ export { SongArtistRepository } from './data/repositories/SongArtistRepository.j
 export type { CryptoProvider } from './domain/interfaces/CryptoProvider.js';
 export type { AuthProvider, AuthTokens, OAuthConfig } from './domain/interfaces/AuthProvider.js';
 export type { SecureStorageProvider } from './domain/interfaces/SecureStorageProvider.js';
+export type {
+  CloudStorageProvider,
+  UploadResult,
+  DownloadResult,
+  DriveFileInfo,
+} from './domain/interfaces/CloudStorageProvider.js';
 export type { EncryptedData } from './domain/types/EncryptedData.js';
 export { AuthenticationError } from './domain/errors/AuthenticationError.js';
 export { AuthCancelledError } from './domain/errors/AuthCancelledError.js';
 export { AuthNetworkError } from './domain/errors/AuthNetworkError.js';
+export { CloudStorageError } from './domain/errors/CloudStorageError.js';
+export type { CloudStorageErrorCode } from './domain/errors/CloudStorageError.js';
 export { FormatError } from './domain/errors/FormatError.js';
 export { VersionError } from './domain/errors/VersionError.js';
 export { EncryptedFileFormat } from './data/database/EncryptedFileFormat.js';

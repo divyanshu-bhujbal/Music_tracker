@@ -1,13 +1,12 @@
 import { useState, useCallback } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import type { CategoryDefinition, DatabaseConnection, SongWithArtists } from '@collectio/shared';
 import { SearchBar } from './SearchBar.js';
 import { FilterBar } from './FilterBar.js';
-import { TableView } from './TableView.js';
-import { TileView } from './TileView.js';
-import { SelectionModeBar } from './SelectionModeBar.js';
+
 import { useSearchFilterStore, useSearchText, useColumnFilters, useActiveSort } from './useSearchFilterStore.js';
 import { useFilteredSongs } from '../categories/songs/store/useSongsStore.js';
 import { SongCreateDialog } from '../categories/songs/components/SongCreateDialog.js';
@@ -26,17 +25,14 @@ export function CategoryScreen({ category }: CategoryScreenProps) {
   const columnFilters = useColumnFilters();
   const { sortKey, sortDirection } = useActiveSort();
   const setSearchText = useSearchFilterStore((s) => s.setSearchText);
-  const setSort = useSearchFilterStore((s) => s.setSort);
   const clearAllFilters = useSearchFilterStore((s) => s.clearAllFilters);
   const toggleColumnFilter = useSearchFilterStore((s) => s.toggleColumnFilter);
   const clearColumnFilter = useSearchFilterStore((s) => s.clearColumnFilter);
 
-  const [viewMode, setViewMode] = useState<'table' | 'tile'>('table');
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<SongWithArtists | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const { db: serviceDb } = useServiceProvider();
 
   if (serviceDb && !_db) {
@@ -50,35 +46,18 @@ export function CategoryScreen({ category }: CategoryScreenProps) {
     sortDirection,
   );
 
-  const handleSort = useCallback((key: string) => {
-    if (sortKey === key) {
-      if (sortDirection === 'asc') {
-        setSort(key, 'desc');
-      } else {
-        setSort(null, 'desc');
-      }
-    } else {
-      setSort(key, 'asc');
-    }
-  }, [sortKey, sortDirection, setSort]);
-
-  const handleRowClick = useCallback((item: SongWithArtists) => {
-    setSelectedItem(item);
-    setDetailOpen(true);
-  }, []);
-
-  const handleCreateSave = useCallback((_item: unknown) => {
+  const handleCreateSave = useCallback(() => {
     setCreateOpen(false);
   }, []);
 
-  const handleEditSave = useCallback((_item: unknown) => {
+  const handleEditSave = useCallback(() => {
     setEditOpen(false);
     setDetailOpen(false);
   }, []);
 
-  const handleSave = (item: unknown) => {
+  const handleSave = () => {
     setCreateOpen(false);
-    handleCreateSave(item);
+    handleCreateSave();
   };
 
   const handleEdit = (item: unknown) => {
@@ -87,13 +66,9 @@ export function CategoryScreen({ category }: CategoryScreenProps) {
     setEditOpen(true);
   };
 
-  const handleDelete = useCallback((_id: string) => {
+  const handleDelete = useCallback(() => {
     setDetailOpen(false);
     setSelectedItem(null);
-  }, []);
-
-  const handleSelectionChange = useCallback((ids: Set<string>) => {
-    setSelectedIds(ids);
   }, []);
 
   const columnLabels: Record<string, string> = {};
@@ -132,13 +107,6 @@ export function CategoryScreen({ category }: CategoryScreenProps) {
         >
           New {category.displayName.slice(0, -1)}
         </Button>
-        <Button
-          variant="outlined"
-          size="small"
-          onClick={() => setViewMode(viewMode === 'table' ? 'tile' : 'table')}
-        >
-          {viewMode === 'table' ? 'Tile View' : 'Table View'}
-        </Button>
       </Box>
 
       {hasActiveFilters && (
@@ -152,37 +120,12 @@ export function CategoryScreen({ category }: CategoryScreenProps) {
       )}
 
       <Box sx={{ flex: 1, overflow: 'auto' }}>
-        {viewMode === 'table' ? (
-          <TableView
-            category={category}
-            data={songs}
-            isLoading={isLoading}
-            error={error}
-            sortKey={sortKey}
-            sortDirection={sortDirection}
-            onSort={handleSort}
-            onRowClick={handleRowClick}
-            selectedIds={selectedIds}
-            onSelectionChange={handleSelectionChange}
-          />
-        ) : (
-          <TileView
-            category={category}
-            data={songs}
-            isLoading={isLoading}
-            error={error}
-            onItemClick={handleRowClick}
-          />
-        )}
+        <Box sx={{ p: 2 }}>
+          <Typography variant="body2" color="text.secondary">
+            {isLoading ? 'Loading...' : error ? `Error: ${error.message}` : `${songs.length} songs`}
+          </Typography>
+        </Box>
       </Box>
-
-      {selectedIds.size > 0 && (
-        <SelectionModeBar
-          selectedCount={selectedIds.size}
-          onClearSelection={() => setSelectedIds(new Set())}
-          onDeleteSelected={() => {}}
-        />
-      )}
 
       {_db && (
         <>

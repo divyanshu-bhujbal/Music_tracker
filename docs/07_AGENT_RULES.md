@@ -293,6 +293,64 @@ async execute(sql: string, params?: unknown[]): Promise<void> {
 
 ---
 
+### Rule 4.8: Multi-Row Writes That Must Be Atomic Require `db.transaction()`
+
+**Imperative:** When writing two or more related rows to `app_metadata` (or any table) that must succeed or fail as an atomic unit, use `DatabaseConnection.transaction()`. Never use consecutive `await db.execute()` calls when the writes are logically part of the same operation.
+
+**Why:** Two separate `execute()` calls are not atomic. If the first succeeds and the second fails (database error, process crash, power loss), the database is left in a partially-written state. For cloud sync metadata (`cloud_file_id` + `cloud_modified_time`), a partial write means the stored file ID doesn't match the stored timestamp — the sync engine sees corrupted state and must reconcile it.
+
+**Pattern:**
+
+```typescript
+// CORRECT — atomic via transaction callback
+await this.db.transaction(async (tx) => {
+  await tx.execute('INSERT INTO app_metadata (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [fileId]);
+  await tx.execute('INSERT INTO app_metadata (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [modifiedTime]);
+});
+
+// INCORRECT — two separate calls, not atomic
+await this.db.execute('INSERT INTO app_metadata (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [fileId]);
+await this.db.execute('INSERT INTO app_metadata (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [modifiedTime]);
+```
+
+**Check:** Grep for consecutive `this.db.execute(` calls within the same method. Any pair of writes that are logically part of the same operation (e.g., persisting `cloud_file_id` and `cloud_modified_time` together, or writing a sync event + updating a timestamp) must be wrapped in `this.db.transaction()`. Use the `tx` parameter inside the callback — never call `this.db.execute()` inside a transaction callback.
+
+**Scope:** All platforms. The `transaction()` method is defined on the `DatabaseConnection` interface and works identically on Electron (better-sqlite3) and Capacitor (Android SQLite). It begins a `BEGIN` statement, executes the callback, then commits on success or rolls back on failure.
+
+---
+
+### Rule 4.9: Cloud Delete Must Clear Local Metadata on Every Success Path — Including 404
+
+**Imperative:** When implementing `CloudStorageProvider.delete()`, always clear local `app_metadata` (`cloud_file_id`, `cloud_modified_time`) on EVERY success path — both HTTP 204 (file deleted) AND HTTP 404 (file already deleted). Never skip metadata cleanup on the 404 idempotency path.
+
+**Why:** If the file was deleted externally (e.g., through Google Drive web UI, another device's sync, or a direct API call) before the local sync engine's `delete()` call, the 404 response correctly avoids throwing an error (the delete is idempotent per spec). But the local `DriveMetadataTracker` still holds the stale `cloud_file_id`. On the next sync cycle, the sync engine reads this fileId, attempts to download it, and gets another 404 — wasting an API call and logging a confusing warning. Clearing metadata on 404 prevents this stale-reference loop.
+
+**Pattern:**
+
+```typescript
+// CORRECT — clears metadata on both 204 and 404
+if (response.status === 404) {
+  console.debug('Provider: delete returned 404 (already deleted)');
+  await this.driveMetadataTracker.clearCloudFileMetadata();
+  return;
+}
+if (response.status !== 204) {
+  throw new CloudStorageError(...);
+}
+await this.driveMetadataTracker.clearCloudFileMetadata();
+
+// INCORRECT — 404 skips metadata cleanup
+if (response.status === 404) {
+  return;  // metadata still references deleted file!
+}
+```
+
+**Check:** Inspect every `delete()` implementation on any `CloudStorageProvider` — every early return path (including 404 idempotency) must call the metadata tracker's `clearCloudFileMetadata()` or equivalent before returning `void`. The 404 path returns void (no error) per the spec's idempotency requirement, but the local state must still be synchronized.
+
+**Scope:** All cloud providers. If a future provider (Dropbox, OneDrive) has different idempotent delete semantics, the same principle applies — if the file is confirmed gone from the cloud, clear the local reference regardless of the HTTP status code.
+
+---
+
 ## 5. Cryptography Rules
 
 ### Rule 5.1: Encode Passwords as UTF-8 Bytes Before Argon2id
@@ -965,6 +1023,48 @@ Then run `cap sync` and verify `capacitor.settings.gradle` includes the new plug
 **Check:** Grep `packages/platform/src/electron/` and `apps/electron/src/` for `open-url` — must produce zero matches. Any `app.on(` call with a string starting with `open-` is a violation.
 
 **Scope:** Windows (Electron). macOS: `open-url` works as documented. If code must support both platforms, use the loopback approach (works everywhere) or guard `open-url` behind a platform check with a Windows-specific fallback. The loopback approach is preferred.
+
+---
+
+## 16. Testing Rules
+
+### Rule 16.1: Mock Delay Methods Directly for Rejection-Based Retry Tests — Avoid Fake Timers for Exhaustion Scenarios
+
+**Imperative:** When writing Jest tests for retry exhaustion (where max retries are reached and the operation rejects), mock the delay/sleep method directly by replacing it on the instance (`(provider as any).sleep = jest.fn().mockResolvedValue()`). Do NOT use `jest.useFakeTimers()` + `jest.runAllTimersAsync()` for tests where the promise is expected to reject. Fake timers may be used only for retry tests where the operation eventually SUCCEEDS (resolves after N retries).
+
+**Why:** `jest.useFakeTimers()` with `jest.runAllTimersAsync()` incorrectly propagates promise rejections in deeply nested async/await chains within `setTimeout` callbacks in Jest 29. When the error is thrown inside a timer callback after max retries, the rejection is not properly attached to the outer promise's rejection handler — `expect().rejects` cannot catch it, and the test either times out (10+ seconds) or reports the error as an unhandled rejection. Mocking `sleep()` to return `Promise.resolve()` eliminates the `setTimeout` entirely, allowing the retry loop to execute synchronously and the rejection to propagate normally through the promise chain.
+
+**Pattern:**
+
+```typescript
+// CORRECT — exhaustion tests (operation REJECTS after max retries)
+it('throws RATE_LIMITED after 429 retries exhausted', async () => {
+  global.fetch = jest.fn().mockResolvedValue({ status: 429, headers: mockHeaders() });
+  (provider as any).sleep = jest.fn().mockResolvedValue(undefined);
+
+  await expect(provider.upload(data, 'db')).rejects.toMatchObject({
+    code: 'RATE_LIMITED',
+  });
+  expect(global.fetch).toHaveBeenCalledTimes(6); // 1 initial + 5 retries
+}, 10000);
+
+// OK — success tests (operation RESOLVES after retries)
+it('retries on 429 then succeeds', async () => {
+  jest.useFakeTimers();
+  jest.spyOn(Math, 'random').mockReturnValue(0.5); // neutralize jitter
+
+  // mock fetch: 429 × N, then 200
+  const uploadPromise = provider.upload(data, 'db');
+  await jest.runAllTimersAsync();
+
+  const result = await uploadPromise;
+  expect(result.fileId).toBe('f1');
+});
+```
+
+**Check:** Search test files for the combination of `jest.useFakeTimers()` + `rejects` — any test that expects the operation to reject after max retries should use the sleep-mock pattern instead of fake timers. Mock cleanup is automatic: `beforeEach` recreates the provider instance from fresh mocks, resetting any instance-level method overrides.
+
+**Scope:** All Jest tests using fake timers with internally-rejecting async operations. This applies to any class that uses `setTimeout`-based backoff internally (e.g., `TokenRefresher`, future `SyncEngine`, future `NetworkMonitor`). The `Math.random` spying pattern (to neutralize jitter) should also be used for success-path retry tests to avoid timing flakiness.
 
 ---
 

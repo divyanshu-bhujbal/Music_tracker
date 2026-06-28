@@ -227,6 +227,68 @@ Option 3 was chosen. It works because: the import is type-only (`import type`), 
 
 ---
 
+### AD-19: Google Drive `alt=media` Download Returns Raw Bytes Only — No `modifiedTime` in Response
+
+**Decision:** The Google Drive API V3 `GET /drive/v3/files/{fileId}?alt=media` endpoint returns ONLY raw file bytes in the response body. It does NOT include `modifiedTime` in response headers (`Last-Modified` and `X-Goog-Meta-Modified-Time` are either absent or carry different semantics). To obtain the actual `modifiedTime` for LWW sync conflict resolution, the caller must make a separate `GET /drive/v3/files/{fileId}?fields=modifiedTime` metadata request after the download completes.
+
+**Reason:** The Drive API's media download endpoint is a streaming binary endpoint — it does not return JSON metadata or custom headers beyond `X-Goog-File-Id`. The E09 implementation initially attempted to read `modifiedTime` from `X-Goog-Meta-Modified-Time` (a custom user-metadata header that Drive does not set on appdata files) with a fallback to `new Date().toISOString()`. The fallback to current wall-clock time would write incorrect timestamps to `app_metadata.cloud_modified_time`, causing the LWW sync engine to falsely conclude the local file is "older than cloud" on every download — potentially triggering unnecessary re-uploads or sync loops.
+
+**Evidence:** E09 review finding C2. The `GoogleDriveProvider.download()` method was refactored to make two requests: (1) `GET .../files/{fileId}?alt=media` for raw bytes, and (2) `GET .../files/{fileId}?fields=modifiedTime` for the authoritative `modifiedTime`. Both requests share the same OAuth token and exponential backoff retry logic. The second request is mandatory — without it, the `cloud_modified_time` stored in `app_metadata` is always wrong after download.
+
+**Consequences:**
+
+- Every `download()` operation makes TWO HTTP requests to Drive: one for content, one for metadata
+- Both requests share the same access token and retry logic (including 401 force-refresh, 429 backoff, 5xx backoff)
+- The metadata request must succeed for the download to be considered complete — if it fails, the download throws `CloudStorageError`
+- This is a Drive API behavior, not an implementation defect. Alternative cloud providers (Dropbox, OneDrive) may have download endpoints that include modification time in headers or response body
+- Any future `CloudStorageProvider` implementation must verify whether its provider's download endpoint includes modification time and implement a separate metadata fetch if not
+
+**Future Considerations:** If Google adds `modifiedTime` to the `alt=media` response headers or adds a query parameter to include it, the separate metadata request can be removed and both requests collapsed into one. Check the Drive API changelog before any V2 cloud storage work. Also consider caching the metadata-tracker's stored `cloud_modified_time` for read-only sync checks (E-10) to avoid the extra request in cases where the sync engine only needs to compare timestamps.
+
+---
+
+### AD-20: Retry Logic Must Use Separate Counters per HTTP Status Family — Never Share a Single `retryCount`
+
+**Decision:** When a `fetchWithRetry` method handles multiple HTTP status families (401 authentication failure, 429 rate limiting, 5xx server errors), use a separate boolean flag for the authentication family and a shared counter for the backoff families. Never increment the shared `retryCount` in the 401 handler — the 401 retry is a forced token refresh (no backoff, single retry), while 429 and 5xx retries use independent exponential backoff with their own retry budgets (5 retries and 3 retries respectively).
+
+**Reason:** With a single shared `retryCount`:
+1. A 401 response triggers token refresh → retry with `retryCount + 1` (now 1)
+2. The retried request receives a 429 (rate limit) from Drive
+3. The 429 handler sees `retryCount = 1`, meaning it starts its backoff at step 2 instead of step 1 (2000ms instead of 1000ms) and has only 4 remaining retries instead of the specified 5 — violating the spec's "5 retries at 1s/2s/4s/8s/16s" guarantee
+
+For correctness, the 401 retry must NOT consume one of the 429/5xx retry slots, and the backoff counters must remain independent.
+
+**Evidence:** E09 review finding m1. The fix uses a boolean `triedRefresh` parameter for the 401 path that is completely independent of the `retryCount` used by the 429 and 5xx handlers. The 401 path toggles `triedRefresh` from `false` → `true`; the 429/5xx paths use `retryCount` without interference.
+
+**Consequences:**
+
+- Any `fetchWithRetry` utility that handles multiple HTTP status families must follow this pattern
+- Authentication retries (401): use a boolean flag with a single retry, zero backoff, no consumption of backoff budget
+- Rate limiting retries (429): use `retryCount` with independent max (5) and exponential backoff with jitter
+- Server error retries (5xx): use `retryCount` with independent max (3) and exponential backoff
+- These counters/flags must remain independent — never cross-increment, never share state
+
+**Pattern:**
+```typescript
+private async fetchWithRetry(
+  url: string, init: RequestInit,
+  operation: string,
+  retryCount = 0,
+  triedRefresh = false,  // independent of retryCount
+): Promise<Response> {
+  if (response.status === 401 && !triedRefresh) {
+    await this.tokenRefresher.forceRefreshAccessToken();
+    return this.fetchWithRetry(url, init, operation, retryCount, true);
+    // retryCount unchanged — 429/5xx paths start fresh
+  }
+  // ... 429 and 5xx handlers use retryCount only ...
+}
+```
+
+**Future Considerations:** If additional error families are added (e.g., 503-specific handling with distinct backoff), add a new dedicated flag/counter — do NOT overload existing ones. All status-family-specific retry state must be independently tracked.
+
+---
+
 ### AD-09: Electron App tsconfig Must Exclude Renderer Source Files
 
 **Decision:** The `apps/electron/tsconfig.json` `include` array must list only `src/main.ts` and `src/preload.ts`. It must NOT include `src/renderer.ts` or use a glob pattern like `["src"]` that would catch it. The renderer source file contains JSX and DOM APIs that the main/preload tsconfig cannot compile.

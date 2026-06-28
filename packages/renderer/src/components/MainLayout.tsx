@@ -3,7 +3,6 @@ import { Outlet } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import CssBaseline from '@mui/material/CssBaseline';
 import { Sidebar, COLLAPSED_WIDTH, EXPANDED_WIDTH } from './Sidebar.js';
-import type { SyncStatus } from './SyncStatusPanel.js';
 
 export function MainLayout() {
   const [desktopOpen, setDesktopOpen] = useState(false);

@@ -1,9 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Drawer from '@mui/material/Drawer';
 import IconButton from '@mui/material/IconButton';
-import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
@@ -16,15 +15,6 @@ import { CategoryNav } from './CategoryNav.js';
 
 const COLLAPSED_WIDTH = 56;
 const EXPANDED_WIDTH = 280;
-
-function loadCollapsedState(): boolean {
-  try {
-    const stored = localStorage.getItem('sidebar-collapsed');
-    return stored !== null ? stored === 'true' : true;
-  } catch {
-    return true;
-  }
-}
 
 function saveCollapsedState(collapsed: boolean) {
   try {
@@ -55,7 +45,6 @@ export function Sidebar({
   pendingChanges,
   onSync,
 }: SidebarProps) {
-  const [collapsed] = useState(loadCollapsedState);
   const navigate = useNavigate();
 
   const handleCollapseToggle = useCallback(() => {

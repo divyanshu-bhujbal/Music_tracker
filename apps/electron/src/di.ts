@@ -22,7 +22,7 @@ import {
   ElectronStorageProvider,
   BetterSqlite3Connection,
 } from '@collectio/platform/electron';
-import { TokenRefresher } from '@collectio/platform/shared';
+import { TokenRefresher, GoogleDriveProvider, DriveMetadataTracker } from '@collectio/platform/shared';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -114,6 +114,16 @@ export async function createServices(): Promise<ServiceProvider> {
   const tokenRefresher = new TokenRefresher(authProvider);
   console.debug('DI: TokenRefresher ready');
 
+  // ── DriveMetadataTracker (depends on DatabaseConnection) ───
+  console.debug('DI: constructing DriveMetadataTracker...');
+  const driveMetadataTracker = new DriveMetadataTracker(db);
+  console.debug('DI: DriveMetadataTracker ready');
+
+  // ── GoogleDriveProvider (depends on TokenRefresher + DriveMetadataTracker) ──
+  console.debug('DI: constructing GoogleDriveProvider...');
+  const cloudStorageProvider = new GoogleDriveProvider(tokenRefresher, driveMetadataTracker);
+  console.debug('DI: GoogleDriveProvider ready');
+
   // ── MigrationRunner (depends on DatabaseConnection) ────────
   console.debug('DI: constructing MigrationRunner...');
   const migrationRunner = new MigrationRunner(db, loadMigrations());
@@ -157,5 +167,6 @@ export async function createServices(): Promise<ServiceProvider> {
     db,
     tokenRefresher,
     migrationRunner,
+    cloudStorageProvider,
   };
 }
