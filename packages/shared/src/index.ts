@@ -7,6 +7,8 @@ export type {
   MigrationReport,
   MigrationStatus,
 } from './data/database/MigrationTypes.js';
+export { DatabaseIntegrityCheck } from './data/database/DatabaseIntegrityCheck.js';
+export type { IntegrityReport } from './data/database/DatabaseIntegrityCheck.js';
 export type { AppMetadataKey } from './domain/models/AppMetadataKey.js';
 export { APP_METADATA_KEYS } from './domain/models/AppMetadataKey.js';
 export { AppMetadataRepository } from './data/repositories/AppMetadataRepository.js';
@@ -84,3 +86,5 @@ export type { SyncState, SyncStoreState } from './application/sync/useSyncStore.
 export { ChangeTracker } from './application/sync/ChangeTracker.js';
 export { ConflictResolver } from './application/sync/ConflictResolver.js';
 export type { MergeResult, OrphanReport } from './application/sync/ConflictResolver.js';
+export { RecoveryManager } from './application/sync/RecoveryManager.js';
+export type { RecoveryResult, RecoveryStatus, RecoveryManagerParams } from './application/sync/RecoveryManager.js';

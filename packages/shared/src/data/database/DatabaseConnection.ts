@@ -105,4 +105,22 @@ export interface DatabaseConnection {
    * @throws {DatabaseError} If serialization fails (database corruption, I/O error).
    */
   serialize(): Promise<Uint8Array>;
+
+  /**
+   * Replace the entire SQLite database file with the given bytes and re-initialize
+   * the connection.
+   *
+   * Closes the existing connection gracefully, writes the bytes to the database
+   * file path (overwriting the corrupt file), re-opens the connection, and
+   * re-runs PRAGMA setup: `foreign_keys = ON`, `journal_mode = WAL`,
+   * `synchronous = NORMAL`, `busy_timeout = 5000`.
+   *
+   * Optional method — not all platforms support byte-level replacement.
+   * Platforms that cannot support this must throw `DatabaseError`.
+   *
+   * @param bytes - Complete SQLite database file bytes to write.
+   * @throws {DatabaseError} If the platform does not support byte-level replacement,
+   *   or if the write/re-open fails.
+   */
+  replaceWithBytes?(bytes: Uint8Array): Promise<void>;
 }
