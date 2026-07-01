@@ -1,5 +1,6 @@
 import type { DatabaseConnection } from '@collectio/shared';
 import { DatabaseError, ConstraintError, ConnectionError } from '@collectio/shared';
+import { writeFileSync } from 'node:fs';
 import type { SqliteDb } from './better-sqlite3-loader.js';
 import { loadBetterSqlite3 } from './better-sqlite3-loader.js';
 
@@ -90,6 +91,7 @@ function validateInput(sql: string, params?: unknown[]): void {
 
 export class BetterSqlite3Connection implements DatabaseConnection {
   private db: SqliteDb | null = null;
+  private dbPath: string | null = null;
 
   /**
    * Create an in-memory instance from a serialized database buffer.
@@ -159,6 +161,8 @@ export class BetterSqlite3Connection implements DatabaseConnection {
         cause: err,
       });
     }
+
+    this.dbPath = dbPath;
   }
 
   async close(): Promise<void> {
@@ -171,6 +175,7 @@ export class BetterSqlite3Connection implements DatabaseConnection {
       });
     } finally {
       this.db = null;
+      this.dbPath = null;
     }
   }
 
@@ -205,6 +210,38 @@ export class BetterSqlite3Connection implements DatabaseConnection {
         { cause: err },
       );
     }
+  }
+
+  async replaceWithBytes(bytes: Uint8Array): Promise<void> {
+    this.ensureOpen();
+    if (!this.dbPath) {
+      throw new ConnectionError(
+        'Cannot replace database: no file path available. Database was opened from buffer, not a file.',
+      );
+    }
+
+    const path = this.dbPath;
+
+    // Close existing connection
+    try {
+      this.db!.close();
+    } catch {
+      // ignore close errors — we are replacing the file
+    }
+    this.db = null;
+
+    // Write replacement bytes to disk
+    try {
+      writeFileSync(path, Buffer.from(bytes));
+    } catch (err) {
+      throw new DatabaseError(
+        `Failed to write replacement database: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err },
+      );
+    }
+
+    // Re-open from the new file
+    await this.open(path);
   }
 
   async transaction<T>(fn: (db: DatabaseConnection) => Promise<T>): Promise<T> {

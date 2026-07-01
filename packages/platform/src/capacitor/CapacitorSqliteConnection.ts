@@ -275,6 +275,16 @@ export class CapacitorSqliteConnection implements DatabaseConnection {
     );
   }
 
+  async replaceWithBytes(bytes: Uint8Array): Promise<void> {
+    ensureOpen(this.isOpen);
+    void bytes; // consumed by interface contract; not used on this platform
+    // Capacitor SQLite plugin does not support replacing the database file with
+    // raw bytes. Recovery is detection + documentation of manual steps only.
+    throw new DatabaseError(
+      'CapacitorSqliteConnection.replaceWithBytes() is not yet implemented — recovery is Windows-only in V1',
+    );
+  }
+
   async transaction<T>(
     fn: (db: DatabaseConnection) => Promise<T>,
   ): Promise<T> {
