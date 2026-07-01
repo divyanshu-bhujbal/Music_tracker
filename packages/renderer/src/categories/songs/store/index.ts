@@ -13,6 +13,8 @@ export {
   useUpdateSong,
   useDeleteSong,
   useRestoreSong,
+  useBulkDeleteSong,
   useCreateArtist,
   useFilteredSongs,
+  useDeletedSongs,
 } from './useSongsStore.js';

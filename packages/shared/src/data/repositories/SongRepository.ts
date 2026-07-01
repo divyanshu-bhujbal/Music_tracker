@@ -36,7 +36,7 @@ export class SongRepository {
     return rows.length > 0 ? rows[0] : null;
   }
 
-  async findSongWithArtists(id: string): Promise<SongWithArtists | null> {
+  async findSongWithArtists(id: string, includeDeleted = false): Promise<SongWithArtists | null> {
     interface JoinRow {
       id: string;
       name: string;
@@ -57,7 +57,7 @@ export class SongRepository {
       FROM songs s
       LEFT JOIN song_artists sa ON s.id = sa.song_id
       LEFT JOIN artists a ON sa.artist_id = a.id AND a.deleted_at IS NULL
-      WHERE s.id = ? AND s.deleted_at IS NULL
+      WHERE s.id = ? ${includeDeleted ? '' : 'AND s.deleted_at IS NULL'}
       ORDER BY sa.sort_order ASC`,
       [id],
     );
@@ -132,6 +132,28 @@ export class SongRepository {
       'UPDATE songs SET deleted_at = NULL, updated_at = ? WHERE id = ? AND deleted_at IS NOT NULL',
       [now, id],
     );
+  }
+
+  async bulkSoftDelete(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    const now = new Date().toISOString();
+    const placeholders = ids.map(() => '?').join(',');
+    const countRows = await this.db.query<{ count: number }>(
+      `SELECT COUNT(*) AS count FROM songs WHERE id IN (${placeholders}) AND deleted_at IS NOT NULL`,
+      [...ids],
+    );
+    const alreadyDeleted = countRows[0]?.count ?? 0;
+    console.debug(
+      `SongRepository: bulk soft-deleting ${ids.length} songs (${alreadyDeleted} already deleted)`,
+    );
+    await this.db.transaction(async (tx) => {
+      for (const id of ids) {
+        await tx.execute(
+          'UPDATE songs SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL',
+          [now, now, id],
+        );
+      }
+    });
   }
 
   async count(): Promise<number> {

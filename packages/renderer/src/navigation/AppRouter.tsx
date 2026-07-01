@@ -1,6 +1,7 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { MainLayout } from '../components/MainLayout.js';
 import { CategoryScreen } from '../components/CategoryScreen.js';
+import { TrashScreen } from '../screens/TrashScreen.js';
 import { SongsCategory } from '../categories/songs/SongsCategory.js';
 import { CategoryRegistry } from '@collectio/shared';
 
@@ -41,7 +42,7 @@ export function AppRouter({ authenticated = true }: AppRouterProps) {
               />
             }
           />
-          <Route path="trash" element={<div>TrashScreen (not yet implemented)</div>} />
+          <Route path="trash" element={<TrashScreen />} />
           <Route path="settings" element={<div>SettingsScreen (not yet implemented)</div>} />
           <Route path="*" element={<Navigate to="/songs" replace />} />
         </Route>

@@ -1162,4 +1162,68 @@ expect(syncLogMarkedAsFailure).toBeDefined();
 
 ---
 
+### Rule 16.3: Mock `@tanstack/react-virtual` in JSDOM Tests — `useVirtualizer` Returns Empty Items Without DOM Measurements
+
+**Imperative:** Every component test that renders a virtualized table MUST mock `@tanstack/react-virtual`'s `useVirtualizer` via `jest.mock()`. The mock must return all items as visible (each at the estimated size) because JSDOM lacks `ResizeObserver` and `getBoundingClientRect` — without these, the real `useVirtualizer` sees a zero-dimension scroll container and returns zero visible items. Never attempt to use the real `useVirtualizer` in a Jest/JSDOM test.
+
+**Why:** JSDOM does not support:
+1. `ResizeObserver` — required for `measureElement` to detect dynamic row heights; silently throws in JSDOM
+2. Proper `getBoundingClientRect()` — always returns `{ width: 0, height: 0, top: 0, left: 0, ... }` unless explicitly mocked per-element
+3. Scroll event propagation — the virtualizer's `getScrollElement` callback returns a valid element, but its `scrollTop`, `clientHeight`, and `offsetHeight` are all `0`
+
+With all measurements at zero, the virtualizer calculates that zero items fit in the viewport, and `getVirtualItems()` returns `[]`. The component renders an empty body — text content, buttons, and all user-facing elements are absent from the DOM. Any test that calls `screen.getByText()` or `screen.getByRole()` on data that should be rendered by virtual rows will fail.
+
+**Pattern (established in `TrashScreen.test.tsx`):**
+
+```typescript
+jest.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: jest.fn().mockImplementation(({ count, estimateSize }: {
+    count: number;
+    estimateSize: () => number;
+  }) => {
+    const size = estimateSize();
+    const items = Array.from({ length: count }, (_, i) => ({
+      index: i,
+      start: i * size,
+      size,
+      key: i,
+      measureElement: jest.fn(),
+    }));
+    return {
+      getVirtualItems: () => items,   // all items visible
+      getTotalSize: () => count * size,
+      measureElement: jest.fn(),
+      scrollToIndex: jest.fn(),
+    };
+  }),
+}));
+```
+
+**Key details:**
+- `estimateSize: () => 48` (the production row height) — each item's `start` is `i * 48`, total size is `count * 48`
+- `getVirtualItems()` returns ALL items, not just the ones that would be in viewport — this is a JSDOM approximation; real browser tests (Playwright) must verify actual scroll behavior
+- `measureElement` is a no-op `jest.fn()` — in production it's a callback ref; in JSDOM it does nothing since there are no real DOM measurements
+- `scrollToIndex` is a no-op `jest.fn()` — scroll behavior is not testable in JSDOM
+- The `overscan` parameter from the production `useVirtualizer` call does NOT need to appear in the mock signature — JSDOM doesn't have a scroll viewport, so overscan is meaningless
+
+**What the mock can test:**
+- Content rendering: text, buttons, and data appear in the DOM
+- User interactions: clicks, input changes, state transitions
+- Edge cases: loading, empty, error states
+- Column alignment: since rows use `display: grid` with fixed `gridTemplateColumns`, alignment is deterministic and does not depend on DOM measurements
+
+**What the mock CANNOT test:**
+- Scroll performance with large datasets
+- Dynamic row height measurement via `measureElement`
+- The `overscan` behavior (pre-rendering rows just outside the viewport)
+- Actual visible vs. hidden rows based on scroll position
+
+For scroll-behavior and performance testing, use Playwright E2E tests (E16) on a real browser or Electron `BrowserWindow`.
+
+**Check:** After implementing any new virtualized table component, its test file must contain `jest.mock('@tanstack/react-virtual', ...)`. Run the tests — if `screen.getByText()` or `screen.getByRole()` fails to find content that should be rendered by virtual rows, verify the mock is present and returns `getVirtualItems()` with proper items.
+
+**Scope:** All Jest/JSDOM test files that render components using `useVirtualizer` from `@tanstack/react-virtual`. This applies to every virtualized table: `TrashScreen`, future `TableView`, future category tables.
+
+---
+
 _End of Agent Rules_

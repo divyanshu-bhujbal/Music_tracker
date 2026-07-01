@@ -349,6 +349,98 @@ describe('SongRepository', () => {
     });
   });
 
+  describe('bulkSoftDelete()', () => {
+    it('BS-01: with empty array is a no-op', async () => {
+      const { mock, calls } = createMockDb();
+      const repo = new SongRepository(mock);
+
+      await repo.bulkSoftDelete([]);
+
+      expect(calls).toHaveLength(0);
+    });
+
+    it('BS-02: wraps in transaction', async () => {
+      const { mock } = createMockDb();
+      const repo = new SongRepository(mock);
+
+      await repo.bulkSoftDelete(['song-1']);
+
+      expect(mock.transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('BS-03: updates deleted_at and updated_at on each ID', async () => {
+      const { mock, calls } = createMockDb();
+      const repo = new SongRepository(mock);
+
+      await repo.bulkSoftDelete(['song-1', 'song-2']);
+
+      const executeCalls = calls.filter((c) => c.method === 'execute');
+      expect(executeCalls).toHaveLength(2);
+      expect(executeCalls[0].sql).toContain('UPDATE songs SET deleted_at = ?, updated_at = ?');
+      expect(executeCalls[0].sql).toContain('WHERE id = ? AND deleted_at IS NULL');
+      expect(executeCalls[1].sql).toContain('UPDATE songs SET deleted_at = ?, updated_at = ?');
+      expect(executeCalls[1].sql).toContain('WHERE id = ? AND deleted_at IS NULL');
+    });
+
+    it('BS-04: all IDs get the same timestamp', async () => {
+      const { mock, calls } = createMockDb();
+      const repo = new SongRepository(mock);
+
+      await repo.bulkSoftDelete(['song-1', 'song-2', 'song-3']);
+
+      const executeCalls = calls.filter((c) => c.method === 'execute');
+      const timestamps = executeCalls.map((c) => c.params?.[0]);
+      expect(timestamps[0]).toBe(timestamps[1]);
+      expect(timestamps[1]).toBe(timestamps[2]);
+    });
+
+    it('BS-05: each update uses WHERE id = ? AND deleted_at IS NULL', async () => {
+      const { mock, calls } = createMockDb();
+      const repo = new SongRepository(mock);
+
+      await repo.bulkSoftDelete(['song-1', 'song-2']);
+
+      const executeCalls = calls.filter((c) => c.method === 'execute');
+      for (const call of executeCalls) {
+        expect(call.sql).toContain('WHERE id = ? AND deleted_at IS NULL');
+      }
+    });
+
+    it('BS-06: already-deleted items are silently skipped by WHERE clause', async () => {
+      const { mock, calls } = createMockDb();
+      const repo = new SongRepository(mock);
+
+      await repo.bulkSoftDelete(['song-1']);
+
+      const executeCalls = calls.filter((c) => c.method === 'execute');
+      expect(executeCalls).toHaveLength(1);
+      expect(executeCalls[0].sql).toContain('WHERE id = ? AND deleted_at IS NULL');
+    });
+
+    it('BS-07: returns Promise<void>', async () => {
+      const { mock } = createMockDb();
+      const repo = new SongRepository(mock);
+
+      const result = repo.bulkSoftDelete(['song-1']);
+
+      expect(result).toBeInstanceOf(Promise);
+      await result;
+    });
+
+    it('BS-08: single-ID bulk delete behaves like softDelete()', async () => {
+      const { mock, calls } = createMockDb();
+      const repo = new SongRepository(mock);
+
+      await repo.bulkSoftDelete(['song-1']);
+
+      expect(mock.transaction).toHaveBeenCalledTimes(1);
+      const executeCalls = calls.filter((c) => c.method === 'execute');
+      expect(executeCalls).toHaveLength(1);
+      expect(executeCalls[0].sql).toContain('UPDATE songs SET deleted_at = ?, updated_at = ?');
+      expect(executeCalls[0].params).toEqual([expect.any(String), expect.any(String), 'song-1']);
+    });
+  });
+
   describe('count()', () => {
     it('returns number of active songs', async () => {
       const { mock } = createMockDb({ queryResult: [{ count: 10 }] });
@@ -383,6 +475,7 @@ describe('SongRepository', () => {
       expect(repo.update('1', { name: 'T', album_name: null, language_id: 1 })).toBeInstanceOf(Promise);
       expect(repo.softDelete('1')).toBeInstanceOf(Promise);
       expect(repo.restore('1')).toBeInstanceOf(Promise);
+      expect(repo.bulkSoftDelete(['1'])).toBeInstanceOf(Promise);
     });
 
     it('count returns a Promise', () => {

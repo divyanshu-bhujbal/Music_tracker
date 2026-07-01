@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Drawer from '@mui/material/Drawer';
 import IconButton from '@mui/material/IconButton';
@@ -8,8 +8,10 @@ import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
+import Tooltip from '@mui/material/Tooltip';
 import MenuIcon from '@mui/icons-material/Menu';
 import SettingsIcon from '@mui/icons-material/Settings';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { SyncStatusPanel, type SyncStatus } from './SyncStatusPanel.js';
 import { CategoryNav } from './CategoryNav.js';
 
@@ -46,6 +48,8 @@ export function Sidebar({
   onSync,
 }: SidebarProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const isTrashActive = location.pathname === '/trash';
 
   const handleCollapseToggle = useCallback(() => {
     saveCollapsedState(!desktopOpen);
@@ -99,6 +103,34 @@ export function Sidebar({
 
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: desktopOpen ? 'stretch' : 'center', px: desktopOpen ? 1 : 0, py: 1 }}>
         <CategoryNav collapsed={!desktopOpen} />
+      </Box>
+
+      <Divider />
+
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: desktopOpen ? 'stretch' : 'center', px: desktopOpen ? 1 : 0, py: 1 }}>
+        {desktopOpen ? (
+          <ListItemButton
+            onClick={() => navigate('/trash')}
+            selected={isTrashActive}
+            sx={{ borderRadius: 1 }}
+          >
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              <DeleteOutlineIcon />
+            </ListItemIcon>
+            <ListItemText primary="Trash" />
+          </ListItemButton>
+        ) : (
+          <Tooltip title="Trash" placement="right">
+            <IconButton
+              onClick={() => navigate('/trash')}
+              size="small"
+              aria-label="Trash"
+              color={isTrashActive ? 'primary' : 'default'}
+            >
+              <DeleteOutlineIcon />
+            </IconButton>
+          </Tooltip>
+        )}
       </Box>
 
       <Divider />

@@ -69,6 +69,28 @@ export class ArtistRepository {
     );
   }
 
+  async bulkSoftDelete(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    const now = new Date().toISOString();
+    const placeholders = ids.map(() => '?').join(',');
+    const countRows = await this.db.query<{ count: number }>(
+      `SELECT COUNT(*) AS count FROM artists WHERE id IN (${placeholders}) AND deleted_at IS NOT NULL`,
+      [...ids],
+    );
+    const alreadyDeleted = countRows[0]?.count ?? 0;
+    console.debug(
+      `ArtistRepository: bulk soft-deleting ${ids.length} artists (${alreadyDeleted} already deleted)`,
+    );
+    await this.db.transaction(async (tx) => {
+      for (const id of ids) {
+        await tx.execute(
+          'UPDATE artists SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL',
+          [now, now, id],
+        );
+      }
+    });
+  }
+
   async count(): Promise<number> {
     const rows = await this.db.query<{ count: number }>(
       'SELECT COUNT(*) AS count FROM artists WHERE deleted_at IS NULL',

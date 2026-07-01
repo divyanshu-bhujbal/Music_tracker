@@ -10,3 +10,4 @@ export {
   useColumnFilterValues,
 } from './components/index.js';
 export type { SearchBarProps, ColumnFilterPopoverProps, FilterBarProps, SearchFilterState } from './components/index.js';
+export { TrashScreen } from './screens/TrashScreen.js';

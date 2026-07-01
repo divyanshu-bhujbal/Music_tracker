@@ -117,6 +117,36 @@ export function useLanguages() {
   });
 }
 
+// ─── Trash Queries ───────────────────────────────────────────────────────────
+
+/**
+ * Fetch all soft-deleted songs with their artist information, for display in TrashScreen.
+ */
+export function useDeletedSongs() {
+  return useQuery({
+    queryKey: ['songs', 'deleted'],
+    queryFn: async (): Promise<SongWithArtists[]> => {
+      const repo = getSongRepo();
+      const allSongs = await repo.findAllIncludingDeleted();
+      const deletedSongs = allSongs.filter((s) => s.deleted_at !== null);
+      const results: SongWithArtists[] = [];
+      for (const song of deletedSongs) {
+        const songWithArtists = await repo.findSongWithArtists(song.id, true);
+        if (songWithArtists) {
+          results.push(songWithArtists);
+        }
+      }
+      results.sort((a, b) => {
+        const aTime = a.deleted_at ?? '';
+        const bTime = b.deleted_at ?? '';
+        return bTime.localeCompare(aTime);
+      });
+      return results;
+    },
+    staleTime: 30_000,
+  });
+}
+
 // ─── Mutations ──────────────────────────────────────────────────────────────
 
 /**
@@ -187,6 +217,23 @@ export function useRestoreSong() {
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['songs'] });
+      void qc.invalidateQueries({ queryKey: ['songs', 'deleted'] });
+    },
+  });
+}
+
+/**
+ * Atomically soft-delete multiple songs.
+ */
+export function useBulkDeleteSong() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      await getSongRepo().bulkSoftDelete(ids);
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['songs'] });
+      void qc.invalidateQueries({ queryKey: ['songs', 'deleted'] });
     },
   });
 }

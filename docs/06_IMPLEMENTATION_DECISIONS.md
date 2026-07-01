@@ -111,6 +111,78 @@
 
 ---
 
+### AD-23: Virtualized MUI Tables Use CSS Grid — Not `<table>` Semantics — for Body Rows
+
+**Decision:** Every MUI table component using `@tanstack/react-virtual` must render the header via actual MUI `Table` + `TableHead` + `TableRow` + `TableCell` components, but must render the virtualized body rows as separate `<Box>` elements with `display: grid` and `position: absolute` + `transform: translateY()`. The body `<Box>` container must have `position: relative`. Header and body rows must share an identical `gridTemplateColumns` value (e.g., `3fr 2fr 2fr 120px 130px 100px`). MUI `TableBody`, `TableRow`, and `TableCell` components must NOT be used for the virtualized body because `<table>` layout (`display: table-row` / `display: table-cell`) is fundamentally incompatible with absolute positioning.
+
+**Reason:** `@tanstack/react-virtual` requires rows to be positioned via `position: absolute; transform: translateY()` within a relatively-positioned container. HTML `<tr>` elements with `display: table-row` and `<td>` elements with `display: table-cell` cannot be repositioned via CSS transforms — the browser's table layout algorithm overrides them. CSS Grid on `<Box>` elements achieves identical column alignment to the `<TableHead>` without the layout conflict. Both the header row and body rows use the same `gridTemplateColumns`, guaranteeing pixel-perfect column alignment.
+
+**Evidence:** E12 (Trash & Recovery) — the first virtualized MUI table in the codebase. The `TrashScreen` implementation demonstrated that MUI `TableRow` + `TableCell` inside an absolutely-positioned grid container silently collapsed (rows rendered at zero height in JSDOM, inconsistent across browser engines). Replacing body `TableRow`/`TableCell` with plain `<Box>` + `<Typography>` children resolved the layout, and using identical `gridTemplateColumns` on both the `<TableRow>` (header) and `<Box>` (body rows) produced correct column alignment.
+
+**Pattern (established in `TrashScreen.tsx`):**
+
+```tsx
+const COLUMN_TEMPLATE = '3fr 2fr 2fr 120px 130px 100px';
+
+// Scroll container (ref for useVirtualizer)
+<Box ref={tableContainerRef} sx={{ flex: 1, overflow: 'auto' }}>
+  {/* Header — real MUI Table, not virtualized */}
+  <Table size="small" sx={{ tableLayout: 'fixed' }}>
+    <TableHead>
+      <TableRow sx={{ display: 'grid', gridTemplateColumns: COLUMN_TEMPLATE }}>
+        <TableCell>Col 1</TableCell>
+        ...
+      </TableRow>
+    </TableHead>
+  </Table>
+
+  {/* Body — virtualized Box rows, NOT TableRow/TableCell */}
+  <Box sx={{ position: 'relative', height: virtualizer.getTotalSize() }}>
+    {virtualItems.map(virtualRow => {
+      const item = data[virtualRow.index];
+      return (
+        <Box
+          key={item.id}
+          data-index={virtualRow.index}
+          ref={virtualizer.measureElement}
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: COLUMN_TEMPLATE,
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            borderBottom: 1,
+            borderColor: 'divider',
+            alignItems: 'center',
+            minHeight: 48,
+            px: 2,
+            transform: `translateY(${virtualRow.start}px)`,
+          }}
+        >
+          <Typography variant="body2" noWrap>{item.name}</Typography>
+          ...
+        </Box>
+      );
+    })}
+  </Box>
+</Box>
+```
+
+**Consequences:**
+
+- Every future virtualized MUI table (main song `TableView` in E-07/E-15, any new category table) MUST follow this pattern: `Table` + `TableHead` for headers, `<Box>` grid for body rows
+- `TableBody` is NOT imported or used in virtualized tables — it renders as `<tbody>` which the browser's table layout algorithm processes into `table-row-group` display, conflicting with the virtualizer's positioning requirements
+- Column definitions must be represented as a CSS grid template string shared between the header `TableRow` and body `Box` elements
+- `Typography variant="body2" noWrap` on each cell replicates MUI's `TableCell` text style for `size="small"` tables
+- Row border, padding, and hover effects must be replicated on the `<Box>` rows (e.g., `borderBottom: 1, borderColor: 'divider'`, `px: 2`, `alignItems: 'center'`)
+- `measureElement` from `useVirtualizer` is attached as a ref on each row, with `data-index` matching the virtual item's index
+- The outer scroll container `Box` must have fixed height (e.g., `flex: 1` within a flex column) and `overflow: 'auto'`
+
+**Future Considerations:** If MUI adds first-class support for virtualized tables, this pattern should be replaced. The dual-header/body approach is a workaround for the inherent conflict between HTML `<table>` layout and CSS absolute positioning — there is no standards-compliant way to reconcile them.
+
+---
+
 ### AD-07: `@types/react-dom` and `@types/react` Have Independent Version Tracks
 
 **Decision:** Never assume `@types/react-dom` and `@types/react` share the same patch version. Always verify the npm registry for the actual latest version of each types package independently.

@@ -308,6 +308,40 @@ describe('ArtistRepository', () => {
     });
   });
 
+  describe('bulkSoftDelete()', () => {
+    it('AB-01: with empty array is a no-op', async () => {
+      const { mock, calls } = createMockDb();
+      const repo = new ArtistRepository(mock);
+
+      await repo.bulkSoftDelete([]);
+
+      expect(calls).toHaveLength(0);
+    });
+
+    it('AB-02: wraps in transaction', async () => {
+      const { mock } = createMockDb();
+      const repo = new ArtistRepository(mock);
+
+      await repo.bulkSoftDelete(['artist-1']);
+
+      expect(mock.transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('AB-03: updates deleted_at and updated_at on each ID', async () => {
+      const { mock, calls } = createMockDb();
+      const repo = new ArtistRepository(mock);
+
+      await repo.bulkSoftDelete(['artist-1', 'artist-2']);
+
+      const executeCalls = calls.filter((c) => c.method === 'execute');
+      expect(executeCalls).toHaveLength(2);
+      expect(executeCalls[0].sql).toContain('UPDATE artists SET deleted_at = ?, updated_at = ?');
+      expect(executeCalls[0].sql).toContain('WHERE id = ? AND deleted_at IS NULL');
+      expect(executeCalls[1].sql).toContain('UPDATE artists SET deleted_at = ?, updated_at = ?');
+      expect(executeCalls[1].sql).toContain('WHERE id = ? AND deleted_at IS NULL');
+    });
+  });
+
   describe('count()', () => {
     it('returns number of active artists', async () => {
       const { mock } = createMockDb({ queryResult: [{ count: 42 }] });
@@ -341,6 +375,7 @@ describe('ArtistRepository', () => {
       expect(repo.update('1', 'Test')).toBeInstanceOf(Promise);
       expect(repo.softDelete('1')).toBeInstanceOf(Promise);
       expect(repo.restore('1')).toBeInstanceOf(Promise);
+      expect(repo.bulkSoftDelete(['1'])).toBeInstanceOf(Promise);
     });
 
     it('count returns a Promise', () => {
