@@ -1,4 +1,8 @@
 export type { ServiceProvider } from './ServiceProvider.js';
+export { SettingsManager } from './settings/SettingsManager.js';
+export type { SettingsValues } from './settings/SettingsManager.js';
+export { SETTINGS_DEFAULTS, SETTINGS_SCHEMA } from './settings/settings-defaults.js';
+export type { SettingSchema } from './settings/settings-defaults.js';
 export { CategoryRegistry } from './category/CategoryRegistry.js';
 export { useActiveCategory, useActiveCategoryStore } from './category/useActiveCategory.js';
 export { useCategoryList } from './category/useCategoryList.js';

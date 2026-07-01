@@ -67,6 +67,22 @@ export class AppSettingsRepository {
     return rows.length > 0;
   }
 
+  /**
+   * Atomically persists multiple settings in a single transaction (Rule 4.8).
+   */
+  async setMultiple(entries: { key: AppSettingsKey; value: string }[]): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const updatedAt = new Date().toISOString();
+      for (const entry of entries) {
+        this.validateKey(entry.key);
+        await tx.execute(
+          'INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)',
+          [entry.key, entry.value, updatedAt],
+        );
+      }
+    });
+  }
+
   private validateKey(key: string): asserts key is AppSettingsKey {
     if (!APP_SETTINGS_KEYS.includes(key as AppSettingsKey)) {
       throw new DatabaseError(

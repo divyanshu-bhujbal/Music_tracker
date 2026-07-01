@@ -88,3 +88,7 @@ export { ConflictResolver } from './application/sync/ConflictResolver.js';
 export type { MergeResult, OrphanReport } from './application/sync/ConflictResolver.js';
 export { RecoveryManager } from './application/sync/RecoveryManager.js';
 export type { RecoveryResult, RecoveryStatus, RecoveryManagerParams } from './application/sync/RecoveryManager.js';
+export { SettingsManager } from './application/settings/SettingsManager.js';
+export type { SettingsValues } from './application/settings/SettingsManager.js';
+export { SETTINGS_DEFAULTS, SETTINGS_SCHEMA } from './application/settings/settings-defaults.js';
+export type { SettingSchema } from './application/settings/settings-defaults.js';
