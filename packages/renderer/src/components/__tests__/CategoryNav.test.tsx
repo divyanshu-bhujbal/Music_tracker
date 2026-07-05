@@ -85,6 +85,7 @@ describe('CategoryNav', () => {
     const categoriesWithUnknown: CategoryDefinition[] = [
       { ...mockCategories[0], iconName: 'unknown-icon' },
     ];
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     jest.spyOn(require('@collectio/shared'), 'useCategoryList').mockReturnValue(categoriesWithUnknown);
     render(<CategoryNav />);
     expect(screen.getByText('Songs')).toBeInTheDocument();

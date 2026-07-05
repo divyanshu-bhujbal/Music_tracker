@@ -1,6 +1,5 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { Sidebar } from '../Sidebar.js';
+import { Sidebar, COLLAPSED_WIDTH, EXPANDED_WIDTH } from '../Sidebar.js';
 import type { SidebarProps } from '../Sidebar.js';
 
 jest.mock('react-router-dom', () => ({
@@ -99,7 +98,6 @@ describe('Sidebar', () => {
   });
 
   it('SB-10: exports COLLAPSED_WIDTH and EXPANDED_WIDTH constants', () => {
-    const { COLLAPSED_WIDTH, EXPANDED_WIDTH } = require('../Sidebar.js');
     expect(COLLAPSED_WIDTH).toBe(56);
     expect(EXPANDED_WIDTH).toBe(280);
   });

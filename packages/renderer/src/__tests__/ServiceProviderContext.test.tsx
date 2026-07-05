@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { ServiceProviderContext, useServiceProvider } from '../ServiceProviderContext.js';
 
@@ -19,7 +18,7 @@ describe('ServiceProviderContext', () => {
   });
 
   it('SPC-02: useServiceProvider returns provider value when inside provider', () => {
-    const mockProvider = { db: {} } as any;
+    const mockProvider = { db: {} } as never;
     render(
       <ServiceProviderContext.Provider value={mockProvider}>
         <TestComponent />

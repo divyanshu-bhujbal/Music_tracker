@@ -26,7 +26,7 @@ function saveCollapsedState(collapsed: boolean) {
   }
 }
 
-interface SidebarProps {
+export interface SidebarProps {
   desktopOpen: boolean;
   mobileOpen: boolean;
   onDesktopToggle: () => void;

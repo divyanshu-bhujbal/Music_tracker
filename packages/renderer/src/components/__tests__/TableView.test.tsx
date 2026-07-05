@@ -26,6 +26,21 @@ jest.mock('@tanstack/react-virtual', () => ({
   }),
 }));
 
+const mockSelectionState = {
+  selectedIds: new Set<string>(),
+  toggle: jest.fn(),
+  selectAll: jest.fn(),
+  clearAll: jest.fn(),
+  isSelected: jest.fn(() => false),
+};
+
+jest.mock('../../stores/useSelectionStore.js', () => ({
+  useSelectionStore: Object.assign(
+    jest.fn((selector: (state: typeof mockSelectionState) => unknown) => selector ? selector(mockSelectionState) : mockSelectionState),
+    { getState: jest.fn(() => mockSelectionState) }
+  ),
+}));
+
 const mockCategory: CategoryDefinition = {
   id: 'songs',
   displayName: 'Songs',
@@ -203,21 +218,24 @@ describe('TableView', () => {
     expect(onRowTap).not.toHaveBeenCalled();
   });
 
-  it('TV-11: select-all checkbox toggles all row checkboxes', () => {
-    render(<TableView {...createDefaultProps()} />);
+  it('TV-11: select-all checkbox calls store.selectAll when none selected, store.clearAll when all selected', () => {
+    const { unmount } = render(<TableView {...createDefaultProps()} />);
 
     const selectAll = screen.getByLabelText('Select all');
     fireEvent.click(selectAll);
 
-    expect(screen.getByLabelText('Select Yesterday')).toBeChecked();
-    expect(screen.getByLabelText('Select Bohemian Rhapsody')).toBeChecked();
-    expect(screen.getByLabelText('Select Imagine')).toBeChecked();
+    expect(mockSelectionState.selectAll).toHaveBeenCalledWith(['s1', 's2', 's3']);
 
-    fireEvent.click(selectAll);
+    unmount();
 
-    expect(screen.getByLabelText('Select Yesterday')).not.toBeChecked();
-    expect(screen.getByLabelText('Select Bohemian Rhapsody')).not.toBeChecked();
-    expect(screen.getByLabelText('Select Imagine')).not.toBeChecked();
+    mockSelectionState.selectedIds = new Set(['s1', 's2', 's3']);
+    mockSelectionState.isSelected.mockReturnValue(true);
+    render(<TableView {...createDefaultProps()} />);
+
+    const selectAll2 = screen.getByLabelText('Select all');
+    fireEvent.click(selectAll2);
+
+    expect(mockSelectionState.clearAll).toHaveBeenCalled();
   });
 
   it('TV-12: gridTemplateColumns computed correctly from ColumnDefinition array', () => {

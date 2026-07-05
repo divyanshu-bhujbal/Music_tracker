@@ -80,10 +80,12 @@ export function SettingsScreen() {
     try {
       await manager.set(key, value);
       setSnackbar({ open: true, message: successMsg, severity: 'success' });
+      // eslint-disable-next-line no-console
       console.debug(`SettingsScreen: saved '${key}' = '${String(value)}'`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Save failed';
       setSnackbar({ open: true, message: msg, severity: 'error' });
+      // eslint-disable-next-line no-console
       console.error(`SettingsScreen: failed to save '${key}': ${msg}`);
     }
   }, [manager]);

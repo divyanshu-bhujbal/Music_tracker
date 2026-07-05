@@ -10,7 +10,7 @@ import CloudOffIcon from '@mui/icons-material/CloudOff';
 
 export type SyncStatus = 'synced' | 'pending' | 'warning' | 'error' | 'offline';
 
-interface SyncStatusPanelProps {
+export interface SyncStatusPanelProps {
   status: SyncStatus;
   lastSyncTime: string | null;
   pendingChanges: number;

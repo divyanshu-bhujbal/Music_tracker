@@ -8,6 +8,7 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set) => ({
   isAuthenticated: true,
   setAuthenticated: (isAuthenticated: boolean) => {
+    // eslint-disable-next-line no-console
     console.debug(`useAuthStore: isAuthenticated changed to ${isAuthenticated}`);
     set({ isAuthenticated });
   },

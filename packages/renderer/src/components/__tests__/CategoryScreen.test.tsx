@@ -36,12 +36,20 @@ const mockStoreState = {
 
 jest.mock('../useSearchFilterStore.js', () => ({
   useSearchFilterStore: Object.assign(
-    jest.fn((selector: any) => selector ? selector(mockStoreState) : mockStoreState),
+    jest.fn((selector: (state: typeof mockStoreState) => unknown) => selector ? selector(mockStoreState) : mockStoreState),
     { getState: jest.fn(() => mockStoreState) }
   ),
   useSearchText: () => '',
   useColumnFilters: () => ({}),
   useActiveSort: () => ({ sortKey: null, sortDirection: null }),
+}));
+
+jest.mock('../../stores/useSelectionStore.js', () => ({
+  useSelectionStore: Object.assign(
+    jest.fn((selector: (state: { selectedIds: Set<string>; toggle: () => void; selectAll: () => void; clearAll: () => void; isSelected: () => boolean }) => unknown) => selector ? selector({ selectedIds: new Set(), toggle: jest.fn(), selectAll: jest.fn(), clearAll: jest.fn(), isSelected: jest.fn() }) : { selectedIds: new Set(), toggle: jest.fn(), selectAll: jest.fn(), clearAll: jest.fn(), isSelected: jest.fn() }),
+    { getState: jest.fn(() => ({ selectedIds: new Set(), clearAll: jest.fn() })) }
+  ),
+  useSelectionCount: () => 0,
 }));
 
 jest.mock('../../categories/songs/store/useSongsStore.js', () => ({
@@ -54,31 +62,35 @@ jest.mock('../../ServiceProviderContext.js', () => ({
 }));
 
 jest.mock('../TableView.js', () => ({
-  TableView: (props: any) => <div data-testid="table-view">TableView</div>,
+  TableView: () => <div data-testid="table-view">TableView</div>,
 }));
 
 jest.mock('../TileView.js', () => ({
-  TileView: (props: any) => <div data-testid="tile-view">TileView</div>,
+  TileView: () => <div data-testid="tile-view">TileView</div>,
 }));
 
 jest.mock('../../categories/songs/components/SongCreateDialog.js', () => ({
-  SongCreateDialog: (props: any) => props.open ? <div data-testid="create-dialog">CreateDialog</div> : null,
+  SongCreateDialog: (props: { open?: boolean }) => props.open ? <div data-testid="create-dialog">CreateDialog</div> : null,
 }));
 
 jest.mock('../../categories/songs/components/SongEditDialog.js', () => ({
-  SongEditDialog: (props: any) => props.open ? <div data-testid="edit-dialog">EditDialog</div> : null,
+  SongEditDialog: (props: { open?: boolean }) => props.open ? <div data-testid="edit-dialog">EditDialog</div> : null,
 }));
 
 jest.mock('../../categories/songs/components/SongDetailDialog.js', () => ({
-  SongDetailDialog: (props: any) => props.open ? <div data-testid="detail-dialog">DetailDialog</div> : null,
+  SongDetailDialog: (props: { open?: boolean }) => props.open ? <div data-testid="detail-dialog">DetailDialog</div> : null,
 }));
 
 jest.mock('../SearchBar.js', () => ({
-  SearchBar: (props: any) => <input data-testid="search-bar" placeholder={props.placeholder} />,
+  SearchBar: (props: { placeholder?: string }) => <input data-testid="search-bar" placeholder={props.placeholder} />,
 }));
 
 jest.mock('../FilterBar.js', () => ({
-  FilterBar: (props: any) => <div data-testid="filter-bar">FilterBar</div>,
+  FilterBar: () => <div data-testid="filter-bar">FilterBar</div>,
+}));
+
+jest.mock('../SelectionModeBar.js', () => ({
+  SelectionModeBar: (props: { selectionCount?: number }) => <div data-testid="selection-mode-bar">{props.selectionCount} selected</div>,
 }));
 
 describe('CategoryScreen', () => {

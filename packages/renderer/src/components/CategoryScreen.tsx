@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
@@ -11,8 +11,11 @@ import { SearchBar } from './SearchBar.js';
 import { FilterBar } from './FilterBar.js';
 import { TableView } from './TableView.js';
 import { TileView } from './TileView.js';
+import { SelectionModeBar } from './SelectionModeBar.js';
 
 import { useSearchFilterStore, useSearchText, useColumnFilters, useActiveSort } from './useSearchFilterStore.js';
+import { useSelectionStore } from '../stores/useSelectionStore.js';
+import { useSelectionCount } from '../stores/useSelectionStore.js';
 import { useFilteredSongs, useLanguages } from '../categories/songs/store/useSongsStore.js';
 import { SongCreateDialog } from '../categories/songs/components/SongCreateDialog.js';
 import { SongEditDialog } from '../categories/songs/components/SongEditDialog.js';
@@ -35,6 +38,7 @@ export function CategoryScreen({ category }: CategoryScreenProps) {
   const clearColumnFilter = useSearchFilterStore((s) => s.clearColumnFilter);
   const setSort = useSearchFilterStore((s) => s.setSort);
   const clearSort = useSearchFilterStore((s) => s.clearSort);
+  const selectionCount = useSelectionCount();
 
   const [viewMode, setViewMode] = useState<'table' | 'tile'>('table');
   const [createOpen, setCreateOpen] = useState(false);
@@ -44,6 +48,16 @@ export function CategoryScreen({ category }: CategoryScreenProps) {
   const { db: serviceDb } = useServiceProvider();
   const { data: languages = [] } = useLanguages();
   const languageMap = new Map(languages.map((l: { id: number; name: string }) => [l.id, l.name]));
+
+  useEffect(() => {
+    return () => {
+      useSelectionStore.getState().clearAll();
+    };
+  }, []);
+
+  const handleDeleteSelected = useCallback(() => {
+    // Stub: actual bulk deletion is E-07
+  }, []);
 
   if (serviceDb && !_db) {
     _db = serviceDb;
@@ -177,6 +191,14 @@ export function CategoryScreen({ category }: CategoryScreenProps) {
           error={error}
           onCardTap={handleRowTap}
           languageMap={languageMap}
+        />
+      )}
+
+      {selectionCount > 0 && (
+        <SelectionModeBar
+          selectionCount={selectionCount}
+          onClear={() => useSelectionStore.getState().clearAll()}
+          onDeleteSelected={handleDeleteSelected}
         />
       )}
 

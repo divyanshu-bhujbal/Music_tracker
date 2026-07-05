@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { MainLayout } from '../MainLayout.js';
 
@@ -8,7 +7,7 @@ jest.mock('react-router-dom', () => ({
 }));
 
 jest.mock('../Sidebar.js', () => ({
-  Sidebar: (props: any) => (
+  Sidebar: (props: { desktopOpen?: boolean }) => (
     <div data-testid="sidebar" data-open={props.desktopOpen}>
       Sidebar
     </div>

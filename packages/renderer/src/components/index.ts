@@ -8,6 +8,8 @@ export { TableView } from './TableView.js';
 export type { TableViewProps } from './TableView.js';
 export { TileView } from './TileView.js';
 export type { TileViewProps } from './TileView.js';
+export { SelectionModeBar } from './SelectionModeBar.js';
+export type { SelectionModeBarProps } from './SelectionModeBar.js';
 export { useSearchFilterStore, useSearchText, useColumnFilters, useActiveSort } from './useSearchFilterStore.js';
 export type { SearchFilterState } from './useSearchFilterStore.js';
 export { useColumnFilterValues } from './useColumnFilterValues.js';

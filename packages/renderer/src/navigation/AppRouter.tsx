@@ -70,6 +70,7 @@ export function AppRouter({ routerType = 'hash' }: AppRouterProps) {
     );
   }
 
+  // eslint-disable-next-line no-console
   console.warn(`AppRouter: unknown routerType "${routerType}", falling back to HashRouter`);
   return (
     <HashRouter>

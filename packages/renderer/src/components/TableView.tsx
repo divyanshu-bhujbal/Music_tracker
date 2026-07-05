@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -14,6 +14,7 @@ import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
 import InboxIcon from '@mui/icons-material/Inbox';
 import type { CategoryDefinition, ColumnDefinition, SongWithArtists } from '@collectio/shared';
+import { useSelectionStore } from '../stores/useSelectionStore.js';
 
 export interface TableViewProps {
   category: CategoryDefinition;
@@ -92,8 +93,11 @@ export function TableView({
   onSort,
   onRowTap,
 }: TableViewProps) {
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const tableContainerRef = useRef<HTMLDivElement>(null);
+  const selectedIds = useSelectionStore((s) => s.selectedIds);
+  const toggle = useSelectionStore((s) => s.toggle);
+  const selectAll = useSelectionStore((s) => s.selectAll);
+  const clearAll = useSelectionStore((s) => s.clearAll);
 
   const columnTemplate = useMemo(
     () => computeGridTemplate(category.tableColumns),
@@ -116,24 +120,16 @@ export function TableView({
 
   const handleSelectAll = useCallback(() => {
     if (allSelected) {
-      setSelectedIds(new Set());
+      clearAll();
     } else {
-      setSelectedIds(new Set(items.map((item) => item.id)));
+      selectAll(items.map((item) => item.id));
     }
-  }, [allSelected, items]);
+  }, [allSelected, items, clearAll, selectAll]);
 
   const handleRowSelect = useCallback((id: string, e: React.ChangeEvent<HTMLInputElement>) => {
     e.stopPropagation();
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  }, []);
+    toggle(id);
+  }, [toggle]);
 
   const handleRowClick = useCallback(
     (item: SongWithArtists) => {

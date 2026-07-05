@@ -1,7 +1,6 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { SyncStatusPanel } from '../SyncStatusPanel.js';
-import type { SyncStatusPanelProps, SyncStatus } from '../SyncStatusPanel.js';
+import type { SyncStatusPanelProps } from '../SyncStatusPanel.js';
 
 function createDefaultProps(overrides?: Partial<SyncStatusPanelProps>): SyncStatusPanelProps {
   return {
