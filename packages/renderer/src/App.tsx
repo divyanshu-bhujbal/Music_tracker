@@ -13,7 +13,11 @@ import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { useAppearanceStore } from './stores/useAppearanceStore.js';
 import { AppRouter } from './navigation/AppRouter.js';
 
-export default function App() {
+interface AppProps {
+  routerType?: 'browser' | 'hash';
+}
+
+export default function App({ routerType = 'hash' }: AppProps) {
   const themeMode = useAppearanceStore((s) => s.theme);
 
   const muiTheme = useMemo(
@@ -29,7 +33,7 @@ export default function App() {
   return (
     <ThemeProvider theme={muiTheme}>
       <CssBaseline />
-      <AppRouter authenticated={true} />
+      <AppRouter routerType={routerType} />
     </ThemeProvider>
   );
 }

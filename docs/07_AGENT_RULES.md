@@ -1226,4 +1226,85 @@ For scroll-behavior and performance testing, use Playwright E2E tests (E16) on a
 
 ---
 
+### Rule 16.4: When Testing Components That Internally Create `BrowserRouter`/`HashRouter`, Use a Partial `jest.mock` of `react-router-dom` with Passthrough Router Wrappers
+
+**Imperative:** When a component under test (e.g., `AppRouter`) internally renders its own `<BrowserRouter>` or `<HashRouter>`, you MUST use a partial `jest.mock('react-router-dom', ...)` that replaces only the Router components with passthrough div wrappers bearing `data-testid` attributes, while spreading `jest.requireActual('react-router-dom')` to preserve all other exports (`Routes`, `Route`, `Outlet`, `Navigate`, `MemoryRouter`). Wrap the test render in `<MemoryRouter>` from the mock's spread exports to provide routing context.
+
+**Why:** `BrowserRouter` and `HashRouter` each create an independent routing context. Wrapping a component that internally renders one of these in an outer `<MemoryRouter>` has no effect — the inner Router's context shadows the outer one. You cannot control the URL or history for the inner routes. Replacing the Router components with transparent wrappers lets `MemoryRouter` provide the single routing context for the entire tree, enabling full control over initial URL (`initialEntries`), navigation, and route matching in tests.
+
+Without this partial mock, every route test would need to manipulate `window.location` directly (for `BrowserRouter`) or `window.location.hash` (for `HashRouter`) before rendering — fragile, racy, and unportable across JSDOM versions. The `MemoryRouter` approach avoids all platform-specific URL manipulation.
+
+**Pattern (established in `AppRouter.test.tsx`):**
+
+```typescript
+import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import { AppRouter } from '../AppRouter.js';
+
+jest.mock('react-router-dom', () => {
+  const actual = jest.requireActual('react-router-dom');
+  return {
+    ...actual,
+    BrowserRouter: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="browser-router">{children}</div>
+    ),
+    HashRouter: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="hash-router">{children}</div>
+    ),
+  };
+});
+
+// The testid wrappers serve dual purpose:
+// 1. They make Router children accessible to the outer MemoryRouter
+// 2. They allow verifying which Router type was selected (browser vs hash)
+
+function renderRouter(initialEntries: string[], routerType?: 'browser' | 'hash') {
+  return render(
+    <MemoryRouter initialEntries={initialEntries}>
+      <AppRouter routerType={routerType} />
+    </MemoryRouter>,
+  );
+}
+
+// Authenticated route tests
+it('RT-02: /songs route renders CategoryScreen', () => {
+  useAuthStore.setState({ isAuthenticated: true });
+  renderRouter(['/songs']);
+  expect(screen.getByTestId('category-screen')).toBeInTheDocument();
+});
+
+// Router type test — verify which passthrough wrapper was used
+it('RT-12: routerType="browser" uses BrowserRouter', () => {
+  renderRouter(['/songs'], 'browser');
+  expect(screen.getByTestId('browser-router')).toBeInTheDocument();
+  expect(screen.queryByTestId('hash-router')).not.toBeInTheDocument();
+});
+```
+
+**Key details:**
+- `jest.requireActual('react-router-dom')` returns the real module — all routing primitives (`Routes`, `Route`, `Outlet`, `Navigate`, `MemoryRouter`) are preserved unchanged
+- Only `BrowserRouter` and `HashRouter` are replaced — these are the components that create new routing contexts
+- The passthrough wrappers accept `children` and render them unmodified — no router context is created, no history is instantiated
+- `data-testid` attributes on the wrappers allow tests to verify which router type the component selected based on its props
+- Child screen/component modules (`MainLayout`, `CategoryScreen`, `TrashScreen`, etc.) must ALSO be mocked to avoid pulling in their heavy dependency trees (see the `AppRouter.test.tsx` for the full mock matrix)
+- `MainLayout`'s mock must render `<Outlet />` from the actual `react-router-dom` so that nested child routes render correctly — use `jest.requireActual('react-router-dom')` within the mock factory to access `Outlet`
+
+**What this pattern enables:**
+- Testing conditional auth routing (authenticated vs. unauthenticated route trees)
+- Testing route-to-component mapping (which component renders for which URL)
+- Testing catch-all redirects (unknown URL → `/songs` or `/setup`)
+- Testing router type selection based on props
+- All tests run in JSDOM without any `window.location` manipulation
+
+**What this pattern does NOT cover:**
+- Actual `BrowserRouter`/`HashRouter` behavior (pushState vs. hash — JSDOM has no real navigation, so this must be verified in Playwright E2E tests)
+- Real `<MainLayout>`, `<CategoryScreen>`, `<TrashScreen>`, etc. (they are mocked — their behavior must be tested in their own isolated test files)
+- History back/forward navigation (AC-10 — requires a real browser; use Playwright for this)
+
+**Check:** Any new test file that renders a component containing `<BrowserRouter>` or `<HashRouter>` must include this partial mock. If `screen.getByTestId()` fails to find content that should be rendered by routes, verify that the Router mock is present and the outer `<MemoryRouter>` provides proper `initialEntries`.
+
+**Scope:** All Jest/JSDOM test files that render `AppRouter` or any future component that creates its own `BrowserRouter`/`HashRouter`. This applies to integration tests of the routing layer, router-type selection tests, and any test that needs to verify route behavior without real browser navigation.
+
+---
+
 _End of Agent Rules_

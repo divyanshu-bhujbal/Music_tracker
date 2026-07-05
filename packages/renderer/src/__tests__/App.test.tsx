@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import App from '../App';
+import { AppRouter as RealAppRouter } from '../navigation/AppRouter.js';
 
-// Mock the stores
 jest.mock('../stores/useAppearanceStore.js', () => ({
   useAppearanceStore: jest.fn().mockImplementation((selector?: (s: unknown) => unknown) => {
     const state = { theme: 'light', setTheme: jest.fn() };
@@ -9,14 +9,40 @@ jest.mock('../stores/useAppearanceStore.js', () => ({
   }),
 }));
 
-// Mock AppRouter to avoid routing setup
 jest.mock('../navigation/AppRouter.js', () => ({
-  AppRouter: () => <div data-testid="app-router">AppRouter</div>,
+  AppRouter: jest.fn().mockReturnValue(
+    <div data-testid="app-router">AppRouter</div>,
+  ),
 }));
+
+jest.mock('@mui/material', () => {
+  const actual = jest.requireActual('@mui/material');
+  return {
+    ...actual,
+    ThemeProvider: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="theme-provider">{children}</div>
+    ),
+    CssBaseline: () => <div data-testid="css-baseline" />,
+  };
+});
 
 describe('App', () => {
   it('renders AppRouter', () => {
     render(<App />);
     expect(screen.getByTestId('app-router')).toBeInTheDocument();
+  });
+
+  it('AP-01: renders MUI theme wrapper', () => {
+    render(<App />);
+    expect(screen.getByTestId('theme-provider')).toBeInTheDocument();
+    expect(screen.getByTestId('css-baseline')).toBeInTheDocument();
+  });
+
+  it('AP-02: passes routerType to AppRouter', () => {
+    render(<App routerType="browser" />);
+    expect(jest.mocked(RealAppRouter)).toHaveBeenCalledWith(
+      expect.objectContaining({ routerType: 'browser' }),
+      expect.anything(),
+    );
   });
 });
