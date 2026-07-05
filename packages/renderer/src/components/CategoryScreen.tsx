@@ -1,14 +1,19 @@
 import { useState, useCallback } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import IconButton from '@mui/material/IconButton';
 import AddIcon from '@mui/icons-material/Add';
+import TableChartIcon from '@mui/icons-material/TableChart';
+import ViewModuleIcon from '@mui/icons-material/ViewModule';
+import Tooltip from '@mui/material/Tooltip';
 import type { CategoryDefinition, DatabaseConnection, SongWithArtists } from '@collectio/shared';
 import { SearchBar } from './SearchBar.js';
 import { FilterBar } from './FilterBar.js';
 import { TableView } from './TableView.js';
+import { TileView } from './TileView.js';
 
 import { useSearchFilterStore, useSearchText, useColumnFilters, useActiveSort } from './useSearchFilterStore.js';
-import { useFilteredSongs } from '../categories/songs/store/useSongsStore.js';
+import { useFilteredSongs, useLanguages } from '../categories/songs/store/useSongsStore.js';
 import { SongCreateDialog } from '../categories/songs/components/SongCreateDialog.js';
 import { SongEditDialog } from '../categories/songs/components/SongEditDialog.js';
 import { SongDetailDialog } from '../categories/songs/components/SongDetailDialog.js';
@@ -31,11 +36,14 @@ export function CategoryScreen({ category }: CategoryScreenProps) {
   const setSort = useSearchFilterStore((s) => s.setSort);
   const clearSort = useSearchFilterStore((s) => s.clearSort);
 
+  const [viewMode, setViewMode] = useState<'table' | 'tile'>('table');
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<SongWithArtists | null>(null);
   const { db: serviceDb } = useServiceProvider();
+  const { data: languages = [] } = useLanguages();
+  const languageMap = new Map(languages.map((l: { id: number; name: string }) => [l.id, l.name]));
 
   if (serviceDb && !_db) {
     _db = serviceDb;
@@ -129,6 +137,15 @@ export function CategoryScreen({ category }: CategoryScreenProps) {
         >
           New {category.displayName.slice(0, -1)}
         </Button>
+        <Tooltip title={viewMode === 'table' ? 'Switch to tile view' : 'Switch to table view'}>
+          <IconButton
+            onClick={() => setViewMode(viewMode === 'table' ? 'tile' : 'table')}
+            size="small"
+            aria-label={viewMode === 'table' ? 'Switch to tile view' : 'Switch to table view'}
+          >
+            {viewMode === 'table' ? <ViewModuleIcon /> : <TableChartIcon />}
+          </IconButton>
+        </Tooltip>
       </Box>
 
       {hasActiveFilters && (
@@ -141,16 +158,27 @@ export function CategoryScreen({ category }: CategoryScreenProps) {
         />
       )}
 
-      <TableView
-        category={category}
-        items={songs}
-        isLoading={isLoading}
-        error={error}
-        sortKey={sortKey}
-        sortDirection={sortDirection}
-        onSort={handleToggleSort}
-        onRowTap={handleRowTap}
-      />
+      {viewMode === 'table' ? (
+        <TableView
+          category={category}
+          items={songs}
+          isLoading={isLoading}
+          error={error}
+          sortKey={sortKey}
+          sortDirection={sortDirection}
+          onSort={handleToggleSort}
+          onRowTap={handleRowTap}
+        />
+      ) : (
+        <TileView
+          category={category}
+          items={songs}
+          isLoading={isLoading}
+          error={error}
+          onCardTap={handleRowTap}
+          languageMap={languageMap}
+        />
+      )}
 
       {_db && (
         <>
