@@ -1,11 +1,11 @@
 import { useState, useCallback } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import type { CategoryDefinition, DatabaseConnection, SongWithArtists } from '@collectio/shared';
 import { SearchBar } from './SearchBar.js';
 import { FilterBar } from './FilterBar.js';
+import { TableView } from './TableView.js';
 
 import { useSearchFilterStore, useSearchText, useColumnFilters, useActiveSort } from './useSearchFilterStore.js';
 import { useFilteredSongs } from '../categories/songs/store/useSongsStore.js';
@@ -28,6 +28,8 @@ export function CategoryScreen({ category }: CategoryScreenProps) {
   const clearAllFilters = useSearchFilterStore((s) => s.clearAllFilters);
   const toggleColumnFilter = useSearchFilterStore((s) => s.toggleColumnFilter);
   const clearColumnFilter = useSearchFilterStore((s) => s.clearColumnFilter);
+  const setSort = useSearchFilterStore((s) => s.setSort);
+  const clearSort = useSearchFilterStore((s) => s.clearSort);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -69,6 +71,26 @@ export function CategoryScreen({ category }: CategoryScreenProps) {
   const handleDelete = useCallback(() => {
     setDetailOpen(false);
     setSelectedItem(null);
+  }, []);
+
+  const handleToggleSort = useCallback(
+    (key: string) => {
+      if (sortKey === key) {
+        if (sortDirection === 'asc') {
+          setSort(key, 'desc');
+        } else {
+          clearSort();
+        }
+      } else {
+        setSort(key, 'asc');
+      }
+    },
+    [sortKey, sortDirection, setSort, clearSort],
+  );
+
+  const handleRowTap = useCallback((item: SongWithArtists) => {
+    setSelectedItem(item);
+    setDetailOpen(true);
   }, []);
 
   const columnLabels: Record<string, string> = {};
@@ -119,13 +141,16 @@ export function CategoryScreen({ category }: CategoryScreenProps) {
         />
       )}
 
-      <Box sx={{ flex: 1, overflow: 'auto' }}>
-        <Box sx={{ p: 2 }}>
-          <Typography variant="body2" color="text.secondary">
-            {isLoading ? 'Loading...' : error ? `Error: ${error.message}` : `${songs.length} songs`}
-          </Typography>
-        </Box>
-      </Box>
+      <TableView
+        category={category}
+        items={songs}
+        isLoading={isLoading}
+        error={error}
+        sortKey={sortKey}
+        sortDirection={sortDirection}
+        onSort={handleToggleSort}
+        onRowTap={handleRowTap}
+      />
 
       {_db && (
         <>

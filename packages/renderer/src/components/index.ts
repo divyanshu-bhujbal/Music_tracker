@@ -4,6 +4,8 @@ export { ColumnFilterPopover } from './ColumnFilterPopover.js';
 export type { ColumnFilterPopoverProps } from './ColumnFilterPopover.js';
 export { FilterBar } from './FilterBar.js';
 export type { FilterBarProps } from './FilterBar.js';
+export { TableView } from './TableView.js';
+export type { TableViewProps } from './TableView.js';
 export { useSearchFilterStore, useSearchText, useColumnFilters, useActiveSort } from './useSearchFilterStore.js';
 export type { SearchFilterState } from './useSearchFilterStore.js';
 export { useColumnFilterValues } from './useColumnFilterValues.js';
