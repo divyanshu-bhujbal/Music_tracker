@@ -2,6 +2,8 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { useAuthStore } from '../../stores/useAuthStore.js';
 import { AppRouter } from '../AppRouter.js';
+import { PlatformAdapterContext } from '../../hooks/usePlatformAdapter.js';
+import { createMockPlatformAdapter } from '../../hooks/__tests__/__mocks__/platformAdapterMock.js';
 
 jest.mock('react-router-dom', () => {
   const actual = jest.requireActual('react-router-dom');
@@ -53,10 +55,13 @@ jest.mock('../../categories/songs/SongsCategory.js', () => ({
   getDb: jest.fn(),
 }));
 
-function renderRouter(initialEntries: string[], routerType?: 'browser' | 'hash') {
+function renderRouter(initialEntries: string[], routerType?: 'browser' | 'hash', adapterOverrides?: Record<string, unknown>) {
+  const adapter = createMockPlatformAdapter(adapterOverrides);
   return render(
     <MemoryRouter initialEntries={initialEntries}>
-      <AppRouter routerType={routerType} />
+      <PlatformAdapterContext.Provider value={adapter}>
+        <AppRouter routerType={routerType} />
+      </PlatformAdapterContext.Provider>
     </MemoryRouter>,
   );
 }
@@ -130,9 +135,12 @@ describe('AppRouter — router type', () => {
   });
 
   it('RT-10: default router type is HashRouter', () => {
+    const adapter = createMockPlatformAdapter();
     render(
       <MemoryRouter initialEntries={['/songs']}>
-        <AppRouter />
+        <PlatformAdapterContext.Provider value={adapter}>
+          <AppRouter />
+        </PlatformAdapterContext.Provider>
       </MemoryRouter>,
     );
     expect(screen.getByTestId('hash-router')).toBeInTheDocument();
@@ -149,5 +157,23 @@ describe('AppRouter — router type', () => {
     renderRouter(['/songs'], 'browser');
     expect(screen.getByTestId('browser-router')).toBeInTheDocument();
     expect(screen.queryByTestId('hash-router')).not.toBeInTheDocument();
+  });
+});
+
+describe('AppRouter — platform back button', () => {
+  beforeEach(() => {
+    useAuthStore.setState({ isAuthenticated: true });
+  });
+
+  it('RT-PLAT-01: onBackButton registered when hasBackButton=true', () => {
+    const onBackButton = jest.fn().mockReturnValue(jest.fn());
+    renderRouter(['/songs'], 'hash', { hasBackButton: true, onBackButton });
+    expect(onBackButton).toHaveBeenCalled();
+  });
+
+  it('RT-PLAT-04: onBackButton NOT called when hasBackButton=false', () => {
+    const onBackButton = jest.fn().mockReturnValue(jest.fn());
+    renderRouter(['/songs'], 'hash', { hasBackButton: false, onBackButton });
+    expect(onBackButton).not.toHaveBeenCalled();
   });
 });

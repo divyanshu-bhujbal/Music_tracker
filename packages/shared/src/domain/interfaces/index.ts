@@ -15,3 +15,4 @@ export type {
   RepositoryMap,
 } from './CategoryDefinition.js';
 export type { NetworkMonitorInterface } from './NetworkMonitorInterface.js';
+export type { PlatformAdapter, ContextMenuItem } from './PlatformAdapter.js';

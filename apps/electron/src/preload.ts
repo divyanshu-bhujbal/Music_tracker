@@ -68,4 +68,17 @@ contextBridge.exposeInMainWorld('collectio', {
     runMigrations: (): Promise<MigrationReport> =>
       ipcRenderer.invoke('collectio:migrationRunner:run'),
   },
+
+  platform: {
+    showContextMenu: (items: Array<{ id: string; label: string }>): Promise<string | null> =>
+      ipcRenderer.invoke('collectio:menu:showContextMenu', items),
+
+    onKeyboardShortcut: (shortcut: string, callbackId: string): void => {
+      ipcRenderer.send('collectio:shortcut:on', shortcut, callbackId);
+    },
+
+    offKeyboardShortcut: (callbackId: string): void => {
+      ipcRenderer.send('collectio:shortcut:off', callbackId);
+    },
+  },
 });

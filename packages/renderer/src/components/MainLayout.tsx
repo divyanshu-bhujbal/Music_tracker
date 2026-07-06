@@ -3,10 +3,12 @@ import { Outlet } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import CssBaseline from '@mui/material/CssBaseline';
 import { Sidebar, COLLAPSED_WIDTH, EXPANDED_WIDTH } from './Sidebar.js';
+import { usePlatformAdapter } from '../hooks/usePlatformAdapter.js';
 
 export function MainLayout() {
   const [desktopOpen, setDesktopOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const platform = usePlatformAdapter();
 
   const handleDesktopToggle = useCallback(() => {
     setDesktopOpen((prev) => !prev);
@@ -19,7 +21,15 @@ export function MainLayout() {
   const sidebarWidth = desktopOpen ? EXPANDED_WIDTH : COLLAPSED_WIDTH;
 
   return (
-    <Box sx={{ display: 'flex', height: '100vh' }}>
+    <Box
+      sx={{
+        display: 'flex',
+        height: '100vh',
+        ...(platform.usesSafeAreaInsets
+          ? { pt: 'env(safe-area-inset-top, 0px)', pb: 'env(safe-area-inset-bottom, 0px)' }
+          : {}),
+      }}
+    >
       <CssBaseline />
 
       <Sidebar

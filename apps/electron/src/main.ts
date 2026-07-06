@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, globalShortcut } from 'electron';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ServiceProvider } from '@collectio/shared';
@@ -9,6 +9,9 @@ const __dirname = dirname(__filename);
 
 let mainWindow: BrowserWindow | null = null;
 let services: ServiceProvider | null = null;
+
+/** Tracks registered shortcuts for cleanup on blur */
+const registeredShortcuts = new Map<string, { shortcut: string; callbackId: string }>();
 
 /**
  * Register IPC handlers that the preload bridge calls.
@@ -102,6 +105,78 @@ function registerIpcHandlers(): void {
   ipcMain.handle('collectio:migrationRunner:run', async () => {
     return services!.migrationRunner.run();
   });
+
+  // ── Platform: Context Menu ─────────────────────────────────
+  ipcMain.handle(
+    'collectio:menu:showContextMenu',
+    async (event, items: Array<{ id: string; label: string }>) => {
+      if (!mainWindow) return null;
+
+      const menuTemplate: Electron.MenuItemConstructorOptions[] = items.map((item) => ({
+        label: item.label,
+        click: () => {
+          event.sender.send('collectio:menu:result', item.id);
+        },
+      }));
+
+      const menu = Menu.buildFromTemplate(menuTemplate);
+      menu.popup({ window: mainWindow });
+
+      return new Promise<string | null>((resolve) => {
+        ipcMain.once('collectio:menu:result', (_e, id: string) => {
+          resolve(id);
+        });
+        menu.on('menu-will-close', () => {
+          resolve(null);
+        });
+      });
+    },
+  );
+
+  // ── Platform: Keyboard Shortcuts ───────────────────────────
+  ipcMain.on('collectio:shortcut:on', (event, shortcut: string, callbackId: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+
+    try {
+      const success = globalShortcut.register(shortcut, () => {
+        if (!win.isDestroyed()) {
+          win.webContents.send('collectio:shortcut:fired', callbackId);
+        }
+      });
+      if (success) {
+        registeredShortcuts.set(callbackId, { shortcut, callbackId });
+      } else {
+        console.warn(`globalShortcut: failed to register "${shortcut}" — may conflict with OS shortcut`);
+      }
+    } catch {
+      console.warn(`globalShortcut: failed to register "${shortcut}" — may conflict with OS shortcut`);
+    }
+  });
+
+  ipcMain.on('collectio:shortcut:off', (_event, callbackId: string) => {
+    const entry = registeredShortcuts.get(callbackId);
+    if (entry) {
+      try {
+        globalShortcut.unregister(entry.shortcut);
+      } catch {
+        // Best effort
+      }
+      registeredShortcuts.delete(callbackId);
+    }
+  });
+}
+
+/** Unregister all keyboard shortcuts (called on window blur and app quit) */
+function unregisterAllShortcuts(): void {
+  for (const [, entry] of registeredShortcuts) {
+    try {
+      globalShortcut.unregister(entry.shortcut);
+    } catch {
+      // Best effort
+    }
+  }
+  registeredShortcuts.clear();
 }
 
 function createWindow(): void {
@@ -124,6 +199,15 @@ function createWindow(): void {
     mainWindow?.show();
   });
 
+  mainWindow.on('focus', () => {
+    // Shortcuts are registered per-Window — re-register on focus
+    // (already registered at IPC time; this is a no-op unless shortcuts were unregistered on blur)
+  });
+
+  mainWindow.on('blur', () => {
+    unregisterAllShortcuts();
+  });
+
   if (process.env.NODE_ENV === 'development' || process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5173');
   } else {
@@ -131,6 +215,7 @@ function createWindow(): void {
   }
 
   mainWindow.on('closed', () => {
+    unregisterAllShortcuts();
     mainWindow = null;
   });
 }
@@ -146,6 +231,10 @@ app.on('ready', () => {
       console.error('Failed to initialize platform services:', err);
       app.quit();
     });
+});
+
+app.on('will-quit', () => {
+  unregisterAllShortcuts();
 });
 
 app.on('window-all-closed', () => {

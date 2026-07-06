@@ -2,8 +2,11 @@ import { StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { ServiceProvider } from '@collectio/shared';
 import { ServiceProviderContext } from '@collectio/renderer/ServiceProviderContext';
+import { createCapacitorPlatformAdapter } from '@collectio/platform/capacitor';
 import { createServices } from './di';
 import App from '@collectio/renderer/App';
+
+const platformAdapter = createCapacitorPlatformAdapter();
 
 function Root() {
   const [services, setServices] = useState<ServiceProvider | null>(null);
@@ -41,7 +44,7 @@ function Root() {
 
   return (
     <ServiceProviderContext.Provider value={services}>
-      <App />
+      <App platformAdapter={platformAdapter} />
     </ServiceProviderContext.Provider>
   );
 }

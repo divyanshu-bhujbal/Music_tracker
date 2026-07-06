@@ -50,6 +50,7 @@ export type {
   DriveFileInfo,
 } from './domain/interfaces/CloudStorageProvider.js';
 export type { NetworkMonitorInterface } from './domain/interfaces/NetworkMonitorInterface.js';
+export type { PlatformAdapter, ContextMenuItem } from './domain/interfaces/PlatformAdapter.js';
 export type { EncryptedData } from './domain/types/EncryptedData.js';
 export { AuthenticationError } from './domain/errors/AuthenticationError.js';
 export { AuthCancelledError } from './domain/errors/AuthCancelledError.js';

@@ -1,4 +1,5 @@
-import { BrowserRouter, HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { BrowserRouter, HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { MainLayout } from '../components/MainLayout.js';
 import { CategoryScreen } from '../components/CategoryScreen.js';
 import { TrashScreen } from '../screens/TrashScreen.js';
@@ -8,9 +9,25 @@ import { UnlockScreen } from '../screens/UnlockScreen.js';
 import { SongsCategory } from '../categories/songs/SongsCategory.js';
 import { CategoryRegistry } from '@collectio/shared';
 import { useAuthStore } from '../stores/useAuthStore.js';
+import { usePlatformAdapter } from '../hooks/usePlatformAdapter.js';
 
 interface AppRouterProps {
   routerType?: 'browser' | 'hash';
+}
+
+function BackButtonHandler() {
+  const platform = usePlatformAdapter();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!platform.hasBackButton) return;
+    const unsub = platform.onBackButton(() => {
+      navigate(-1);
+    });
+    return unsub;
+  }, [platform, navigate]);
+
+  return null;
 }
 
 function UnauthenticatedRoutes() {
@@ -57,6 +74,7 @@ export function AppRouter({ routerType = 'hash' }: AppRouterProps) {
   if (routerType === 'browser') {
     return (
       <BrowserRouter>
+        <BackButtonHandler />
         {isAuthenticated ? <AuthenticatedRoutes /> : <UnauthenticatedRoutes />}
       </BrowserRouter>
     );
@@ -65,6 +83,7 @@ export function AppRouter({ routerType = 'hash' }: AppRouterProps) {
   if (routerType === 'hash') {
     return (
       <HashRouter>
+        <BackButtonHandler />
         {isAuthenticated ? <AuthenticatedRoutes /> : <UnauthenticatedRoutes />}
       </HashRouter>
     );
@@ -74,6 +93,7 @@ export function AppRouter({ routerType = 'hash' }: AppRouterProps) {
   console.warn(`AppRouter: unknown routerType "${routerType}", falling back to HashRouter`);
   return (
     <HashRouter>
+      <BackButtonHandler />
       {isAuthenticated ? <AuthenticatedRoutes /> : <UnauthenticatedRoutes />}
     </HashRouter>
   );

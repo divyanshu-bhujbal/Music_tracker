@@ -15,6 +15,7 @@ import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
 import InboxIcon from '@mui/icons-material/Inbox';
 import type { CategoryDefinition, ColumnDefinition, SongWithArtists } from '@collectio/shared';
 import { useSelectionStore } from '../stores/useSelectionStore.js';
+import { usePlatformAdapter } from '../hooks/usePlatformAdapter.js';
 
 export interface TableViewProps {
   category: CategoryDefinition;
@@ -27,7 +28,10 @@ export interface TableViewProps {
   onRowTap: (item: SongWithArtists) => void;
 }
 
-function computeGridTemplate(columns: ColumnDefinition[]): string {
+function computeGridTemplate(
+  columns: ColumnDefinition[],
+  columnWidthScale: number,
+): string {
   const hasSelection = columns.some((c) => c.key === 'selection');
   const parts: string[] = [];
 
@@ -38,7 +42,7 @@ function computeGridTemplate(columns: ColumnDefinition[]): string {
   for (const col of columns) {
     if (col.key === 'selection') continue;
     if (col.fixedWidth) {
-      parts.push(`${col.fixedWidth}px`);
+      parts.push(`${col.fixedWidth * columnWidthScale}px`);
     } else {
       parts.push(`${col.flex}fr`);
     }
@@ -94,14 +98,15 @@ export function TableView({
   onRowTap,
 }: TableViewProps) {
   const tableContainerRef = useRef<HTMLDivElement>(null);
+  const platform = usePlatformAdapter();
   const selectedIds = useSelectionStore((s) => s.selectedIds);
   const toggle = useSelectionStore((s) => s.toggle);
   const selectAll = useSelectionStore((s) => s.selectAll);
   const clearAll = useSelectionStore((s) => s.clearAll);
 
   const columnTemplate = useMemo(
-    () => computeGridTemplate(category.tableColumns),
-    [category.tableColumns],
+    () => computeGridTemplate(category.tableColumns, platform.columnWidthScale),
+    [category.tableColumns, platform.columnWidthScale],
   );
 
   const dataColumns = useMemo(
@@ -136,6 +141,25 @@ export function TableView({
       onRowTap(item);
     },
     [onRowTap],
+  );
+
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent, item: SongWithArtists) => {
+      if (!platform.supportsContextMenu) return;
+      e.preventDefault();
+      platform.showContextMenu([
+        { id: 'detail', label: 'View Details', action: () => onRowTap(item) },
+        { id: 'edit', label: 'Edit', action: () => onRowTap(item) },
+        { id: 'delete', label: 'Delete', action: () => {} },
+        { id: 'copy-name', label: 'Copy Name', action: () => navigator.clipboard.writeText(item.name) },
+        {
+          id: 'copy-artist',
+          label: 'Copy Artist',
+          action: () => navigator.clipboard.writeText(item.artists.map((a) => a.display_name).join(', ')),
+        },
+      ]);
+    },
+    [platform, onRowTap],
   );
 
   const handleHeaderClick = useCallback(
@@ -259,11 +283,16 @@ export function TableView({
                   alignItems: 'center',
                   minHeight: 48,
                   px: 1,
-                  '&:hover': { bgcolor: 'action.hover' },
+                  ...(platform.supportsHover ? { '&:hover': { bgcolor: 'action.hover' } } : {}),
                   cursor: 'pointer',
                   transform: `translateY(${virtualRow.start}px)`,
                 }}
                 onClick={() => handleRowClick(item)}
+                onContextMenu={
+                  platform.supportsContextMenu
+                    ? (e: React.MouseEvent) => handleContextMenu(e, item)
+                    : undefined
+                }
               >
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <Checkbox

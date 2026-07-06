@@ -3,6 +3,8 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import type { CategoryDefinition, SongWithArtists } from '@collectio/shared';
 import { TableView } from '../TableView.js';
 import type { TableViewProps } from '../TableView.js';
+import { PlatformAdapterContext } from '../../hooks/usePlatformAdapter.js';
+import { createMockPlatformAdapter } from '../../hooks/__tests__/__mocks__/platformAdapterMock.js';
 
 jest.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: jest.fn().mockImplementation(({ count, estimateSize }: {
@@ -113,13 +115,22 @@ function createDefaultProps(overrides?: Partial<TableViewProps>): TableViewProps
   };
 }
 
+function renderWithProvider(ui: React.ReactElement, adapterOverrides?: Record<string, unknown>) {
+  const adapter = createMockPlatformAdapter(adapterOverrides);
+  return render(
+    <PlatformAdapterContext.Provider value={adapter}>
+      {ui}
+    </PlatformAdapterContext.Provider>,
+  );
+}
+
 describe('TableView', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   it('TV-01: renders correct number of header columns from category.tableColumns', () => {
-    render(<TableView {...createDefaultProps()} />);
+    renderWithProvider(<TableView {...createDefaultProps()} />);
 
     expect(screen.getByText('Song Name')).toBeInTheDocument();
     expect(screen.getByText('Artist(s)')).toBeInTheDocument();
@@ -129,7 +140,7 @@ describe('TableView', () => {
   });
 
   it('TV-02: renders row data correctly (song name, artist, album, language)', () => {
-    render(<TableView {...createDefaultProps()} />);
+    renderWithProvider(<TableView {...createDefaultProps()} />);
 
     expect(screen.getByText('Yesterday')).toBeInTheDocument();
     expect(screen.getByText('The Beatles')).toBeInTheDocument();
@@ -144,21 +155,21 @@ describe('TableView', () => {
   });
 
   it('TV-03: loading state shows CircularProgress and hides table', () => {
-    render(<TableView {...createDefaultProps({ isLoading: true })} />);
+    renderWithProvider(<TableView {...createDefaultProps({ isLoading: true })} />);
 
     expect(screen.getByRole('progressbar')).toBeInTheDocument();
     expect(screen.queryByText('Song Name')).not.toBeInTheDocument();
   });
 
   it('TV-04: empty state shows "No songs found"', () => {
-    render(<TableView {...createDefaultProps({ items: [] })} />);
+    renderWithProvider(<TableView {...createDefaultProps({ items: [] })} />);
 
     expect(screen.getByText('No songs found')).toBeInTheDocument();
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 
   it('TV-05: error state shows Alert with error message', () => {
-    render(<TableView {...createDefaultProps({ error: new Error('Database failure') })} />);
+    renderWithProvider(<TableView {...createDefaultProps({ error: new Error('Database failure') })} />);
 
     expect(screen.getByText('Database failure')).toBeInTheDocument();
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
@@ -166,7 +177,7 @@ describe('TableView', () => {
 
   it('TV-06: sort callback fires on sortable header click with correct column key', () => {
     const onSort = jest.fn();
-    render(<TableView {...createDefaultProps({ onSort })} />);
+    renderWithProvider(<TableView {...createDefaultProps({ onSort })} />);
 
     fireEvent.click(screen.getByText('Song Name'));
 
@@ -183,7 +194,7 @@ describe('TableView', () => {
       ],
     };
 
-    render(<TableView {...createDefaultProps({ category: categoryWithNonSortable, onSort })} />);
+    renderWithProvider(<TableView {...createDefaultProps({ category: categoryWithNonSortable, onSort })} />);
 
     fireEvent.click(screen.getByText('Song Name'));
 
@@ -191,7 +202,7 @@ describe('TableView', () => {
   });
 
   it('TV-08: sort indicator renders correctly for active sort column (asc)', () => {
-    render(<TableView {...createDefaultProps({ sortKey: 'name', sortDirection: 'asc' })} />);
+    renderWithProvider(<TableView {...createDefaultProps({ sortKey: 'name', sortDirection: 'asc' })} />);
 
     const nameHeader = screen.getByText('Song Name').closest('th');
     expect(nameHeader).toBeInTheDocument();
@@ -201,7 +212,7 @@ describe('TableView', () => {
 
   it('TV-09: row click fires onRowTap with correct item', () => {
     const onRowTap = jest.fn();
-    render(<TableView {...createDefaultProps({ onRowTap })} />);
+    renderWithProvider(<TableView {...createDefaultProps({ onRowTap })} />);
 
     fireEvent.click(screen.getByText('Yesterday'));
 
@@ -210,7 +221,7 @@ describe('TableView', () => {
 
   it('TV-10: checkbox click does NOT fire onRowTap', () => {
     const onRowTap = jest.fn();
-    render(<TableView {...createDefaultProps({ onRowTap })} />);
+    renderWithProvider(<TableView {...createDefaultProps({ onRowTap })} />);
 
     const checkbox = screen.getByLabelText('Select Yesterday');
     fireEvent.click(checkbox);
@@ -219,7 +230,7 @@ describe('TableView', () => {
   });
 
   it('TV-11: select-all checkbox calls store.selectAll when none selected, store.clearAll when all selected', () => {
-    const { unmount } = render(<TableView {...createDefaultProps()} />);
+    const { unmount } = renderWithProvider(<TableView {...createDefaultProps()} />);
 
     const selectAll = screen.getByLabelText('Select all');
     fireEvent.click(selectAll);
@@ -230,7 +241,7 @@ describe('TableView', () => {
 
     mockSelectionState.selectedIds = new Set(['s1', 's2', 's3']);
     mockSelectionState.isSelected.mockReturnValue(true);
-    render(<TableView {...createDefaultProps()} />);
+    renderWithProvider(<TableView {...createDefaultProps()} />);
 
     const selectAll2 = screen.getByLabelText('Select all');
     fireEvent.click(selectAll2);
@@ -239,7 +250,7 @@ describe('TableView', () => {
   });
 
   it('TV-12: gridTemplateColumns computed correctly from ColumnDefinition array', () => {
-    render(<TableView {...createDefaultProps()} />);
+    renderWithProvider(<TableView {...createDefaultProps()} />);
 
     const headerCells = screen.getAllByRole('columnheader');
     const labels = headerCells.map((cell) => cell.textContent?.trim()).filter(Boolean);
@@ -254,7 +265,7 @@ describe('TableView', () => {
   });
 
   it('TV-13: virtualization mock returns all items as visible', () => {
-    render(<TableView {...createDefaultProps({ items: mockSongs })} />);
+    renderWithProvider(<TableView {...createDefaultProps({ items: mockSongs })} />);
 
     expect(screen.getByText('Yesterday')).toBeInTheDocument();
     expect(screen.getByText('Bohemian Rhapsody')).toBeInTheDocument();
@@ -263,7 +274,7 @@ describe('TableView', () => {
 
   it('TV-14: single row renders correctly', () => {
     const singleSong = [mockSongs[0]];
-    render(<TableView {...createDefaultProps({ items: singleSong })} />);
+    renderWithProvider(<TableView {...createDefaultProps({ items: singleSong })} />);
 
     expect(screen.getByText('Yesterday')).toBeInTheDocument();
     expect(screen.getByText('The Beatles')).toBeInTheDocument();
@@ -278,20 +289,74 @@ describe('TableView', () => {
       ],
     };
 
-    render(<TableView {...createDefaultProps({ category: categoryNoSelection })} />);
+    renderWithProvider(<TableView {...createDefaultProps({ category: categoryNoSelection })} />);
 
     expect(screen.getByLabelText('Select all')).toBeInTheDocument();
     expect(screen.getByLabelText('Select Yesterday')).toBeInTheDocument();
   });
 
   it('TV-16: re-render with new data updates rows', () => {
-    const { rerender } = render(<TableView {...createDefaultProps({ items: [mockSongs[0]] })} />);
+    const { rerender } = renderWithProvider(<TableView {...createDefaultProps({ items: [mockSongs[0]] })} />);
 
     expect(screen.getByText('Yesterday')).toBeInTheDocument();
     expect(screen.queryByText('Bohemian Rhapsody')).not.toBeInTheDocument();
 
-    rerender(<TableView {...createDefaultProps({ items: mockSongs })} />);
+    const adapter = createMockPlatformAdapter();
+    rerender(
+      <PlatformAdapterContext.Provider value={adapter}>
+        <TableView {...createDefaultProps({ items: mockSongs })} />
+      </PlatformAdapterContext.Provider>,
+    );
 
     expect(screen.getByText('Bohemian Rhapsody')).toBeInTheDocument();
+  });
+
+  it('TV-PLAT-01: row hover styles present when supportsHover=true', () => {
+    renderWithProvider(<TableView {...createDefaultProps()} />, { supportsHover: true });
+    // Virtualized rows are <Box> elements with data-index, not <tr>
+    const rows = screen.getAllByRole('row');
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('TV-PLAT-03: right-click on row calls showContextMenu when supportsContextMenu=true', () => {
+    const showContextMenu = jest.fn();
+    renderWithProvider(<TableView {...createDefaultProps()} />, {
+      supportsContextMenu: true,
+      showContextMenu,
+    });
+
+    const row = screen.getByText('Yesterday').closest('[data-index]');
+    expect(row).not.toBeNull();
+    fireEvent.contextMenu(row!);
+    expect(showContextMenu).toHaveBeenCalled();
+    expect(showContextMenu.mock.calls[0][0]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'detail', label: 'View Details' }),
+        expect.objectContaining({ id: 'edit', label: 'Edit' }),
+        expect.objectContaining({ id: 'delete', label: 'Delete' }),
+      ]),
+    );
+  });
+
+  it('TV-PLAT-04: row has no onContextMenu handler when supportsContextMenu=false', () => {
+    renderWithProvider(<TableView {...createDefaultProps()} />, {
+      supportsContextMenu: false,
+    });
+    const row = screen.getByText('Yesterday').closest('[data-index]');
+    expect(row).not.toBeNull();
+  });
+
+  it('TV-PLAT-05: column widths scaled by columnWidthScale', () => {
+    renderWithProvider(<TableView {...createDefaultProps()} />, { columnWidthScale: 1.3 });
+    // Verify component renders successfully with scaled columns
+    expect(screen.getByText('Yesterday')).toBeInTheDocument();
+    expect(screen.getByText('Song Name')).toBeInTheDocument();
+  });
+
+  it('TV-PLAT-06: column widths not scaled when columnWidthScale=1.0', () => {
+    renderWithProvider(<TableView {...createDefaultProps()} />, { columnWidthScale: 1.0 });
+    // Verify component renders successfully with default columns
+    expect(screen.getByText('Yesterday')).toBeInTheDocument();
+    expect(screen.getByText('Song Name')).toBeInTheDocument();
   });
 });

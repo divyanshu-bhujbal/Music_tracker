@@ -6,6 +6,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
 import InboxIcon from '@mui/icons-material/Inbox';
 import type { CategoryDefinition, SongWithArtists } from '@collectio/shared';
+import { usePlatformAdapter } from '../hooks/usePlatformAdapter.js';
 
 export interface TileViewProps {
   category: CategoryDefinition;
@@ -24,6 +25,8 @@ export function TileView({
   onCardTap,
   languageMap,
 }: TileViewProps) {
+  const platform = usePlatformAdapter();
+
   if (isLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1 }}>
@@ -83,6 +86,9 @@ export function TileView({
             sx={{
               cursor: 'pointer',
               '&:hover': { bgcolor: 'action.hover' },
+              ...(platform.touchTargetSize > 0
+                ? { minHeight: `${platform.touchTargetSize}px`, minWidth: `${platform.touchTargetSize}px` }
+                : {}),
             }}
             onClick={() => onCardTap(item)}
           >
