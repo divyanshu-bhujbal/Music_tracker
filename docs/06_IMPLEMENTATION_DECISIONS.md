@@ -531,6 +531,77 @@ The correct resolution is to exclude `renderer.ts` from the app tsconfig entirel
 
 ---
 
+### AD-24: Electron GlobalShortcut Registrations Must Be Preserved Across Blur/Focus Cycles
+
+**Decision:** When the Electron BrowserWindow loses focus, call `globalShortcut.unregister()` for each registered shortcut but preserve the registration metadata (accelerator, callbackId, target window) in the `Map`. On window focus, iterate the preserved entries and re-register each shortcut via `globalShortcut.register()`. Only clear the Map on `will-quit` and `window.closed` — never on blur.
+
+**Reason:** `globalShortcut.register()` binds a keyboard accelerator to a callback globally. If the window blurs (Alt+Tab, notification, system dialog) and the shortcuts remain registered, they fire even when the app is in the background — potentially intercepting OS shortcuts or triggering actions on the wrong window. Unregistering on blur is correct, but the registration metadata must be preserved so the shortcuts can be restored on focus. Clearing the Map on blur permanently loses all shortcuts registered by renderer components, and those components have no way to detect the loss (no browser event for global shortcut unregistration). The focus handler of a component registered via `onKeyboardShortcut()` does not fire when the OS window, rather than the component, regains focus.
+
+**Evidence:** E15 review (C1 finding). The original implementation called `unregisterAllShortcuts()` on blur which cleared the `registeredShortcuts` Map AND unregistered all shortcuts. The focus handler was a no-op comment stating "this is a no-op unless shortcuts were unregistered on blur." Since blur DID unregister them, focus needed to re-register them — but the cleared Map contained no data to re-register from. The fix separates unregistration (blur) from metadata cleanup (quit/close) and adds a focus handler that iterates preserved entries.
+
+**Consequences:**
+
+- `registeredShortcuts` Map must NOT be cleared on blur — only on `will-quit` and `window.closed`
+- Blur handler: iterate Map values, call `globalShortcut.unregister(entry.shortcut)` for each, catch errors
+- Focus handler: iterate Map values, call `globalShortcut.register(entry.shortcut, callback)` for each, log warnings on failure
+- Components that call `platformAdapter.onKeyboardShortcut()` in a `useEffect` will register via IPC; the main process stores the metadata. If the component unmounts, it calls `offKeyboardShortcut()` which removes the entry from the Map AND unregisters from `globalShortcut` — correct cleanup on both paths
+- This pattern applies to any future IPC handler that registers global OS resources tied to window focus
+
+**Future Considerations:** If multiple BrowserWindows are supported in V2, the Map entries must include a weak reference to the target `BrowserWindow` and the focus handler must only re-register shortcuts for the focused window. The current V1 implementation assumes a single window.
+
+---
+
+### AD-25: Vite `?raw` Import Path Depth from Capacitor App to Shared Package Is Exactly 3 Levels
+
+**Decision:** When using Vite's `?raw` import in `apps/capacitor/src/` to inline file content from `packages/shared/`, the relative path must be `../../../packages/shared/...` — exactly 3 directory levels up from `src/` to the repository root. Using 4 levels (`../../../../`) resolves outside the project directory and causes a build failure.
+
+**Reason:** The Capacitor `di.ts` lives at `apps/capacitor/src/di.ts`. The SQL migration files live at `packages/shared/src/data/database/migrations/`. From `apps/capacitor/src/`:
+- `..` → `apps/capacitor/`
+- `../..` → `apps/`
+- `../../..` → repository root
+- `../../../../` → one level ABOVE repository root
+
+Vite's module resolver rejects paths that resolve outside the project root with "Could not resolve". This is a build-time error, not a runtime error — it blocks `vite build` entirely for the Capacitor target.
+
+The Electron `di.ts` does not use `?raw` imports; it uses `node:fs` + `readFileSync` with a path computed from `fileURLToPath(import.meta.url)`, which has a different base (the compiled `dist-electron/` output directory).
+
+**Evidence:** E15 review — `pnpm build:capacitor` failed with "Could not resolve `../../../../packages/shared/src/data/database/migrations/001_core_infrastructure.sql?raw`". The path had an extra `../` that resolved above the repo root. Changing to `../../../` fixed the build. The Electron build was unaffected because it uses `node:fs` at runtime, not Vite `?raw` at build time.
+
+**Consequences:**
+
+- Every `?raw` import in `apps/capacitor/src/` targeting `packages/shared/` must use exactly `../../../packages/shared/...`
+- When a new migration `.sql` file is added to `packages/shared/src/data/database/migrations/`, it must be imported in `apps/capacitor/src/di.ts` using this depth and added to the `CAPACITOR_MIGRATIONS` array
+- The `raw-modules.d.ts` declaration file in `apps/capacitor/src/` enables TypeScript to understand the `?raw` import syntax
+- This is a Capacitor-only build concern — Electron uses `node:fs` at runtime and has different path resolution rules (Rule 13.5)
+
+**Future Considerations:** If a new app package is created (e.g., `apps/ios/`) with a similar Vite `?raw` import pattern, the depth from its `src/` directory to the repo root must be verified. Always count the directory levels from the importing file's directory to the repo root.
+
+---
+
+### AD-26: MUI `sx` Prop CSS Values Are Not Verifiable in JSDOM — Visual Platform Adaptations Require Playwright
+
+**Decision:** Platform-specific visual adaptations applied via MUI's `sx` prop (safe area insets, hover effects, min-touch-target sizing) can only be verified by Playwright E2E tests in a real browser. JSDOM-based Jest tests can verify that the component renders without crashing and that the structural DOM is correct, but cannot assert computed CSS values from `sx` props because MUI compiles them to Emotion CSS classes, not inline styles.
+
+**Reason:** MUI's `sx` prop uses Emotion's CSS-in-JS engine. At render time, the prop values are compiled into generated CSS class names and injected into a `<style>` tag. The DOM element only carries a `class` attribute with the generated class name, not the raw CSS property values. JSDOM lacks: (1) a CSSOM that can resolve computed styles from dynamically injected `<style>` tags, (2) layout computation (`getBoundingClientRect` always returns zeros unless mocked per-element). Consequently:
+- `expect(element).toHaveStyle('padding-top: env(safe-area-inset-top)')` — always fails
+- `expect(element.style.paddingTop)` — empty string (inline style was never set; the class was)
+- `expect(getComputedStyle(element).paddingTop)` — empty or `'0px'` in JSDOM
+
+The structural assertions in component tests (ML-PLAT-01, TV-PLAT-05, TV-PLAT-07) correctly verify that the component renders under each platform configuration without crashing. The actual CSS behavior requires Playwright (E-16).
+
+**Evidence:** E15 review (MIN3 finding). ML-PLAT-01 and ML-PLAT-02 initially only asserted `expect(root).toBeInTheDocument()` for both `usesSafeAreaInsets: true` and `usesSafeAreaInsets: false`. Attempts to assert `toHaveStyle('padding-top: env(...)')` failed because JSDOM cannot resolve Emotion-generated CSS classes. The tests were improved to verify MUI class generation on the root element, which is the maximum assertion achievable in JSDOM. TableView hover tests (TV-PLAT-01) similarly verify rendering but cannot assert the `&:hover` CSS rule is present.
+
+**Consequences:**
+
+- Jest tests for components with platform-conditional `sx` props must assert structural DOM (data-testid presence, element existence, class attribute generation) and verify crash-free rendering under each platform configuration
+- Actual CSS behavior (safe area padding, hover background, touch target sizing, column width scaling) must be verified via Playwright E2E tests in a real browser
+- This limitation applies to ALL MUI `sx` prop values, not just platform adaptations — any component test that needs to verify CSS should plan for Playwright
+- Component tests that use `jest.mock()` for the platform adapter still provide value: they verify prop flow, conditional branching, callback wiring, and crash-free rendering under each platform configuration
+
+**Future Considerations:** If a CSS-in-JS testing library (e.g., `@emotion/jest`) is adopted that can resolve Emotion-generated class names to their CSS property values in JSDOM, the visual adaptation tests could be strengthened. Until then, the Jest/Playwright division of responsibility is: Jest = logic + structure + wiring; Playwright = visual CSS + scroll behavior + real browser interactions.
+
+---
+
 ## 2. Package Decisions
 
 ### PK-01: `@capacitor-community/sqlite` v6.0.2

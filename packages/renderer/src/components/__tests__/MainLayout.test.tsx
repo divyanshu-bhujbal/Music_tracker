@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import React from 'react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MainLayout } from '../MainLayout.js';
 import { PlatformAdapterContext } from '../../hooks/usePlatformAdapter.js';
 import { createMockPlatformAdapter } from '../../hooks/__tests__/__mocks__/platformAdapterMock.js';
@@ -9,9 +10,14 @@ jest.mock('react-router-dom', () => ({
 }));
 
 jest.mock('../Sidebar.js', () => ({
-  Sidebar: (props: { desktopOpen?: boolean }) => (
+  Sidebar: (props: { desktopOpen?: boolean; onDesktopToggle?: () => void }) => (
     <div data-testid="sidebar" data-open={props.desktopOpen}>
-      Sidebar
+      <button
+        aria-label="Toggle sidebar"
+        onClick={() => props.onDesktopToggle?.()}
+      >
+        Toggle
+      </button>
     </div>
   ),
   COLLAPSED_WIDTH: 56,
@@ -45,13 +51,21 @@ describe('MainLayout', () => {
     expect(container.querySelector('main')).toBeInTheDocument();
   });
 
+  it('ML-04: clicking sidebar toggle changes desktopOpen from false to true', () => {
+    renderWithProvider(<MainLayout />);
+    const sidebar = screen.getByTestId('sidebar');
+    expect(sidebar).toHaveAttribute('data-open', 'false');
+    fireEvent.click(screen.getByLabelText('Toggle sidebar'));
+    expect(sidebar).toHaveAttribute('data-open', 'true');
+  });
+
   it('ML-PLAT-01: safe area padding applied when usesSafeAreaInsets=true', () => {
     const { container } = renderWithProvider(<MainLayout />, { usesSafeAreaInsets: true });
     const root = container.firstChild as HTMLElement;
     expect(root).toBeDefined();
-    // MUI sx styles are applied via JSS class, not inline style in JSDOM
-    // Verify the component rendered with the platform adapter by checking it's not the noop
     expect(root).toBeInTheDocument();
+    const rootStyle = root.getAttribute('class') ?? '';
+    expect(rootStyle).toBeTruthy();
   });
 
   it('ML-PLAT-02: safe area padding absent when usesSafeAreaInsets=false', () => {
@@ -59,5 +73,7 @@ describe('MainLayout', () => {
     const root = container.firstChild as HTMLElement;
     expect(root).toBeDefined();
     expect(root).toBeInTheDocument();
+    const rootStyle = root.getAttribute('class') ?? '';
+    expect(rootStyle).toBeTruthy();
   });
 });

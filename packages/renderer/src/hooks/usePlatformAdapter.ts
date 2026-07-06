@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { PlatformAdapter } from '@collectio/shared';
 
-const noopPlatformAdapter: PlatformAdapter = {
+export const noopPlatformAdapter: PlatformAdapter = {
   supportsHover: false,
   supportsContextMenu: false,
   supportsKeyboardShortcuts: false,

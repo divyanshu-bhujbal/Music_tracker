@@ -1307,4 +1307,109 @@ it('RT-12: routerType="browser" uses BrowserRouter', () => {
 
 ---
 
+### Rule 16.5: Wrap Captured `navigate()` Callbacks in `act()` When Testing Back Button Navigation
+
+**Imperative:** When a test captures the callback passed to `PlatformAdapter.onBackButton()` (or any callback that invokes `useNavigate()`) and calls it outside React's event system, wrap the invocation in `act()` from `@testing-library/react`. The `navigate(-1)` call triggers a synchronous React Router state update that JSDOM requires `act()` to fully flush before assertions.
+
+**Why:** The `BackButtonHandler` component registers `() => navigate(-1)` as the back button callback via `platform.onBackButton()`. In a test, this callback is captured by mocking `onBackButton` to store the argument. When the test invokes the captured callback directly, React Router's internal `setStateImpl` fires synchronously but React Testing Library's renderer has not batched the update. Without `act()`, the DOM does not reflect the new route location, and `screen.getByTestId('trash-screen')` (or any assertion on the post-navigation state) fails — the DOM still shows the pre-navigation component.
+
+**Pattern:**
+```typescript
+let backCallback: (() => void) | null = null;
+const onBackButton = jest.fn().mockImplementation((cb: () => void) => {
+  backCallback = cb;
+  return jest.fn(); // unsubscribe
+});
+
+renderRouter(['/trash', '/songs'], 'hash', { hasBackButton: true, onBackButton });
+expect(screen.getByTestId('category-screen')).toBeInTheDocument();
+
+// CORRECT — act() wrapping
+act(() => {
+  backCallback!();
+});
+expect(screen.getByTestId('trash-screen')).toBeInTheDocument();
+
+// INCORRECT — no act(), DOM stale after navigate(-1)
+backCallback!();
+expect(screen.getByTestId('trash-screen')).toBeInTheDocument(); // FAILS
+```
+
+**Check:** Any test that captures a function from a mocked adapter/context and invokes it outside a `fireEvent` or `userEvent` call must wrap the invocation in `act()`. This applies to `PlatformAdapter.onBackButton()`, `PlatformAdapter.onKeyboardShortcut()`, and any future adapter callback registration methods.
+
+**Scope:** All Jest/JSDOM test files that test components using `PlatformAdapter` callback registration methods that trigger React state updates (navigation, store mutations, state changes). This specifically applies to `AppRouter.test.tsx` back button tests and any future test for keyboard shortcut callbacks or context menu action dispatch.
+
+---
+
+### Rule 16.6: MUI `sx` Prop CSS Values Require Playwright E2E — JSDOM Cannot Verify Visual Platform Adaptations
+
+**Imperative:** Jest/JSDOM tests for components that apply platform-conditional CSS via MUI's `sx` prop (safe area insets, hover effects, touch target sizing, column width scaling) must limit assertions to: (1) the component renders without crashing under each platform configuration, (2) structural DOM elements exist (data-testid, aria-label), (3) MUI-generated CSS class names are present on elements. Never assert computed CSS property values (`toHaveStyle`, `getComputedStyle`, inline `style` attributes) for `sx` prop styles — these are compiled to Emotion CSS classes, not inline styles, and JSDOM cannot resolve them.
+
+**Why:** MUI's `sx` prop compiles to Emotion-generated CSS class names injected into a `<style>` tag. JSDOM lacks a CSSOM that can: (1) parse dynamically injected `<style>` tags, (2) resolve class-based styles to computed property values. Additionally, JSDOM's `getBoundingClientRect` always returns zeros unless explicitly mocked per-element. Assertions like `expect(element).toHaveStyle('padding-top: env(safe-area-inset-top)')` always fail even when the production CSS is correct.
+
+**What JSDOM tests CAN assert:**
+- Component renders without crash under `supportsHover: true` and `supportsHover: false`
+- Component renders without crash under `touchTargetSize: 48` and `touchTargetSize: 0`
+- Component renders without crash under `usesSafeAreaInsets: true` and `usesSafeAreaInsets: false`
+- Structural elements: root Box, cards, rows, header cells exist in the DOM
+- Data content: text labels, song names, artist names appear correctly
+- MUI class attributes are generated on elements (verifying `sx` was processed)
+
+**What requires Playwright E2E (E-16):**
+- Actual padding/margin from `env(safe-area-inset-*)` CSS constants
+- Actual hover background color change on row mouseover
+- Actual `minHeight: 48px` rendering on cards
+- Actual column width from `columnWidthScale: 1.3` multiplier
+- Scroll behavior with virtualized rows
+
+**Pattern:**
+```typescript
+// CORRECT — structural + crash-free verification
+it('ML-PLAT-01: safe area padding applied when usesSafeAreaInsets=true', () => {
+  const { container } = renderWithProvider(<MainLayout />, { usesSafeAreaInsets: true });
+  const root = container.firstChild as HTMLElement;
+  expect(root).toBeDefined();
+  expect(root).toBeInTheDocument();
+  const rootClass = root.getAttribute('class') ?? '';
+  expect(rootClass).toBeTruthy(); // MUI class was generated
+});
+
+// INCORRECT — JSDOM cannot resolve this
+expect(root).toHaveStyle('padding-top: env(safe-area-inset-top, 0px)'); // always fails
+```
+
+**Check:** If a test for a component with platform-conditional `sx` props contains `toHaveStyle(...)`, verify that the style assertion is for an inline style (set via `style={{...}}`), not an `sx` prop. If it's for `sx`, replace with structural assertions and add a Playwright E2E test to the E-16 plan.
+
+**Scope:** All Jest/JSDOM tests for components using `usePlatformAdapter()` and applying conditional `sx` props based on platform capability flags. This includes `MainLayout`, `TableView`, `TileView`, and any future component with platform-conditional visual styling via MUI.
+
+---
+
+### Rule 9.7: Vite `?raw` Import Path from Capacitor App to Shared Package Is Exactly 3 Directory Levels
+
+**Imperative:** When using Vite's `?raw` import in `apps/capacitor/src/` to inline file content from `packages/shared/`, use exactly `../../../packages/shared/...` — 3 levels up to the repository root. Using 4 levels (`../../../../`) resolves outside the project and fails the build. The Electron app does not use `?raw` imports; it uses `node:fs` at runtime (Rule 13.5).
+
+**Why:** The Capacitor `di.ts` at `apps/capacitor/src/di.ts` needs to import SQL migration file content at build time. The directory traversal:
+- `..` → `apps/capacitor/`
+- `../..` → `apps/`
+- `../../..` → repository root
+- `../../../packages/shared/src/data/database/migrations/001_core_infrastructure.sql` — correct
+- `../../../../packages/...` → one level ABOVE repo root — Vite rejects this path
+
+Vite's `?raw` import suffix tells the bundler to read the file and export its contents as a string. This happens at build time, so the path must be statically resolvable.
+
+**Pattern:**
+```typescript
+// CORRECT — 3 levels from apps/capacitor/src/ to repo root
+import migration001Sql from '../../../packages/shared/src/data/database/migrations/001_core_infrastructure.sql?raw';
+
+// INCORRECT — 4 levels resolves outside the project
+import migration001Sql from '../../../../packages/shared/src/data/database/migrations/001_core_infrastructure.sql?raw';
+```
+
+**Check:** After adding a new migration `.sql` file and importing it in `apps/capacitor/src/di.ts`, run `pnpm build:capacitor`. If the build fails with "Could not resolve .../migrations/...sql?raw", verify the path depth — count `../` segments from `apps/capacitor/src/` to the repository root (should be exactly 3).
+
+**Scope:** All `?raw` imports in `apps/capacitor/src/`. This does not apply to `apps/electron/` (uses `node:fs` + platform-relative path resolution) or `packages/` (no `?raw` imports in library packages).
+
+---
+
 _End of Agent Rules_

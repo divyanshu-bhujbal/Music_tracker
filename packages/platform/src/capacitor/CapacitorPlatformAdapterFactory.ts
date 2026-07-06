@@ -24,7 +24,7 @@ export function createCapacitorPlatformAdapter(): PlatformAdapter {
         callback();
       });
       return () => {
-        handler.then((h) => h.remove());
+        handler.then((h) => h.remove()).catch(() => {});
       };
     },
   };

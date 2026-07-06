@@ -32,8 +32,8 @@ import {
 } from '@collectio/platform/capacitor';
 import { TokenRefresher, GoogleDriveProvider, DriveMetadataTracker, NetworkMonitor } from '@collectio/platform/shared';
 
-import migration001Sql from '../../../../packages/shared/src/data/database/migrations/001_core_infrastructure.sql?raw';
-import migration002Sql from '../../../../packages/shared/src/data/database/migrations/002_songs_category.sql?raw';
+import migration001Sql from '../../../packages/shared/src/data/database/migrations/001_core_infrastructure.sql?raw';
+import migration002Sql from '../../../packages/shared/src/data/database/migrations/002_songs_category.sql?raw';
 
 /**
  * Migration definitions for the Capacitor platform.

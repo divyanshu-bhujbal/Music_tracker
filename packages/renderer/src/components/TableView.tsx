@@ -32,19 +32,16 @@ function computeGridTemplate(
   columns: ColumnDefinition[],
   columnWidthScale: number,
 ): string {
-  const hasSelection = columns.some((c) => c.key === 'selection');
-  const parts: string[] = [];
-
-  if (hasSelection) {
-    parts.push('48px');
-  }
+  const parts: string[] = ['48px'];
 
   for (const col of columns) {
     if (col.key === 'selection') continue;
     if (col.fixedWidth) {
       parts.push(`${col.fixedWidth * columnWidthScale}px`);
-    } else {
+    } else if (col.flex) {
       parts.push(`${col.flex}fr`);
+    } else {
+      parts.push('1fr');
     }
   }
 

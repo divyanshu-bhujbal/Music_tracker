@@ -200,12 +200,30 @@ function createWindow(): void {
   });
 
   mainWindow.on('focus', () => {
-    // Shortcuts are registered per-Window — re-register on focus
-    // (already registered at IPC time; this is a no-op unless shortcuts were unregistered on blur)
+    for (const { shortcut, callbackId } of registeredShortcuts.values()) {
+      try {
+        const success = globalShortcut.register(shortcut, () => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('collectio:shortcut:fired', callbackId);
+          }
+        });
+        if (!success) {
+          console.warn(`globalShortcut: failed to re-register "${shortcut}" — may conflict with OS shortcut`);
+        }
+      } catch {
+        console.warn(`globalShortcut: failed to re-register "${shortcut}" — may conflict with OS shortcut`);
+      }
+    }
   });
 
   mainWindow.on('blur', () => {
-    unregisterAllShortcuts();
+    for (const { shortcut } of registeredShortcuts.values()) {
+      try {
+        globalShortcut.unregister(shortcut);
+      } catch {
+        // Best effort
+      }
+    }
   });
 
   if (process.env.NODE_ENV === 'development' || process.env.VITE_DEV_SERVER_URL) {

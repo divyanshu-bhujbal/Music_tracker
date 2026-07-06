@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { useAuthStore } from '../../stores/useAuthStore.js';
 import { AppRouter } from '../AppRouter.js';
@@ -169,6 +169,33 @@ describe('AppRouter — platform back button', () => {
     const onBackButton = jest.fn().mockReturnValue(jest.fn());
     renderRouter(['/songs'], 'hash', { hasBackButton: true, onBackButton });
     expect(onBackButton).toHaveBeenCalled();
+  });
+
+  it('RT-PLAT-02: back button callback triggers navigate(-1)', () => {
+    let backCallback: (() => void) | null = null;
+    const unsub = jest.fn();
+    const onBackButton = jest.fn().mockImplementation((cb: () => void) => {
+      backCallback = cb;
+      return unsub;
+    });
+    renderRouter(['/trash', '/songs'], 'hash', { hasBackButton: true, onBackButton });
+    expect(onBackButton).toHaveBeenCalled();
+    expect(backCallback).not.toBeNull();
+    expect(screen.getByTestId('category-screen')).toBeInTheDocument();
+    act(() => {
+      backCallback!();
+    });
+    expect(screen.getByTestId('trash-screen')).toBeInTheDocument();
+    expect(screen.queryByTestId('category-screen')).not.toBeInTheDocument();
+  });
+
+  it('RT-PLAT-03: back button unsubscribe called on unmount', () => {
+    const unsub = jest.fn();
+    const onBackButton = jest.fn().mockReturnValue(unsub);
+    const { unmount } = renderRouter(['/songs'], 'hash', { hasBackButton: true, onBackButton });
+    expect(onBackButton).toHaveBeenCalled();
+    unmount();
+    expect(unsub).toHaveBeenCalledTimes(1);
   });
 
   it('RT-PLAT-04: onBackButton NOT called when hasBackButton=false', () => {

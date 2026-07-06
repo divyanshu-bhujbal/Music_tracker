@@ -1,3 +1,4 @@
+import React from 'react';
 import { render, screen } from '@testing-library/react';
 import App from '../App';
 import { AppRouter as RealAppRouter } from '../navigation/AppRouter.js';
@@ -26,6 +27,19 @@ jest.mock('@mui/material', () => {
   };
 });
 
+jest.mock('../hooks/usePlatformAdapter.js', () => {
+  const actual = jest.requireActual('../hooks/usePlatformAdapter.js');
+  return {
+    ...actual,
+    PlatformAdapterContext: {
+      ...actual.PlatformAdapterContext,
+      Provider: ({ children }: { children: React.ReactNode }) => (
+        <div data-testid="platform-adapter-provider">{children}</div>
+      ),
+    },
+  };
+});
+
 describe('App', () => {
   it('renders AppRouter', () => {
     render(<App />);
@@ -44,5 +58,12 @@ describe('App', () => {
       expect.objectContaining({ routerType: 'browser' }),
       expect.anything(),
     );
+  });
+
+  it('AP-03: PlatformAdapterContext.Provider wraps children in component tree', () => {
+    render(<App />);
+    expect(screen.getByTestId('platform-adapter-provider')).toBeInTheDocument();
+    expect(screen.getByTestId('theme-provider')).toBeInTheDocument();
+    expect(screen.getByTestId('app-router')).toBeInTheDocument();
   });
 });

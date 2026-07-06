@@ -21,40 +21,54 @@ const mockCategory: CategoryDefinition = {
   duplicateDetector: async () => [],
 };
 
+// Module-scope mock functions for per-test overrides (AD-T15.11-01)
+const mockUseFilteredSongs = jest.fn().mockReturnValue({ data: [], isLoading: false, error: null });
+const mockUseLanguages = jest.fn().mockReturnValue({ data: [], isLoading: false, error: null });
+const mockUseSelectionCount = jest.fn().mockReturnValue(0);
+const mockSetSort = jest.fn();
+const mockClearSort = jest.fn();
+let mockSortState = { sortKey: null as string | null, sortDirection: null as 'asc' | 'desc' | null };
+const mockUseSearchText = jest.fn().mockReturnValue('');
+let mockColumnFilters: Record<string, string[]> = {};
+
 const mockStoreState = {
   searchText: '',
-  columnFilters: {},
-  sortKey: null,
-  sortDirection: 'desc',
+  columnFilters: {} as Record<string, string[]>,
+  sortKey: null as string | null,
+  sortDirection: 'desc' as string,
   setSearchText: jest.fn(),
   clearAllFilters: jest.fn(),
   toggleColumnFilter: jest.fn(),
   clearColumnFilter: jest.fn(),
-  setSort: jest.fn(),
-  clearSort: jest.fn(),
+  setSort: mockSetSort,
+  clearSort: mockClearSort,
 };
 
 jest.mock('../useSearchFilterStore.js', () => ({
   useSearchFilterStore: Object.assign(
-    jest.fn((selector: (state: typeof mockStoreState) => unknown) => selector ? selector(mockStoreState) : mockStoreState),
-    { getState: jest.fn(() => mockStoreState) }
+    jest.fn((selector: (state: typeof mockStoreState) => unknown) =>
+      selector ? selector(mockStoreState) : mockStoreState,
+    ),
+    { getState: jest.fn(() => mockStoreState) },
   ),
-  useSearchText: () => '',
-  useColumnFilters: () => ({}),
-  useActiveSort: () => ({ sortKey: null, sortDirection: null }),
+  useSearchText: () => mockUseSearchText(),
+  useColumnFilters: () => mockColumnFilters,
+  useActiveSort: () => mockSortState,
 }));
 
 jest.mock('../../stores/useSelectionStore.js', () => ({
   useSelectionStore: Object.assign(
-    jest.fn((selector: (state: { selectedIds: Set<string>; toggle: () => void; selectAll: () => void; clearAll: () => void; isSelected: () => boolean }) => unknown) => selector ? selector({ selectedIds: new Set(), toggle: jest.fn(), selectAll: jest.fn(), clearAll: jest.fn(), isSelected: jest.fn() }) : { selectedIds: new Set(), toggle: jest.fn(), selectAll: jest.fn(), clearAll: jest.fn(), isSelected: jest.fn() }),
-    { getState: jest.fn(() => ({ selectedIds: new Set(), clearAll: jest.fn() })) }
+    jest.fn((selector: (state: { selectedIds: Set<string>; toggle: () => void; selectAll: () => void; clearAll: () => void; isSelected: () => boolean }) => unknown) =>
+      selector ? selector({ selectedIds: new Set(), toggle: jest.fn(), selectAll: jest.fn(), clearAll: jest.fn(), isSelected: jest.fn() }) : { selectedIds: new Set(), toggle: jest.fn(), selectAll: jest.fn(), clearAll: jest.fn(), isSelected: jest.fn() },
+    ),
+    { getState: jest.fn(() => ({ selectedIds: new Set(), clearAll: jest.fn() })) },
   ),
-  useSelectionCount: () => 0,
+  useSelectionCount: () => mockUseSelectionCount(),
 }));
 
 jest.mock('../../categories/songs/store/useSongsStore.js', () => ({
-  useFilteredSongs: () => ({ data: [], isLoading: false, error: null }),
-  useLanguages: () => ({ data: [], isLoading: false, error: null }),
+  useFilteredSongs: (...args: unknown[]) => mockUseFilteredSongs(...args),
+  useLanguages: (...args: unknown[]) => mockUseLanguages(...args),
 }));
 
 jest.mock('../../ServiceProviderContext.js', () => ({
@@ -62,15 +76,40 @@ jest.mock('../../ServiceProviderContext.js', () => ({
 }));
 
 jest.mock('../TableView.js', () => ({
-  TableView: () => <div data-testid="table-view">TableView</div>,
+  TableView: (props: { error?: Error | null; isLoading?: boolean; category?: { tableColumns?: Array<{ key: string; label: string; sortable: boolean }> }; onSort?: (key: string) => void }) => (
+    <div data-testid="table-view">
+      TableView
+      {props.isLoading && <div data-testid="loading-indicator">Loading</div>}
+      {props.error && <div>{props.error.message}</div>}
+      {props.category?.tableColumns?.map((col) =>
+        col.sortable ? (
+          <button key={col.key} onClick={() => props.onSort?.(col.key)}>
+            {col.label}
+          </button>
+        ) : null,
+      )}
+    </div>
+  ),
 }));
 
 jest.mock('../TileView.js', () => ({
-  TileView: () => <div data-testid="tile-view">TileView</div>,
+  TileView: (props: { error?: Error | null; isLoading?: boolean }) => (
+    <div data-testid="tile-view">
+      TileView
+      {props.isLoading && <div data-testid="loading-indicator">Loading</div>}
+      {props.error && <div>{props.error.message}</div>}
+    </div>
+  ),
 }));
 
 jest.mock('../../categories/songs/components/SongCreateDialog.js', () => ({
-  SongCreateDialog: (props: { open?: boolean }) => props.open ? <div data-testid="create-dialog">CreateDialog</div> : null,
+  SongCreateDialog: (props: { open?: boolean; onCancel?: () => void }) =>
+    props.open ? (
+      <div data-testid="create-dialog">
+        CreateDialog
+        <button onClick={props.onCancel}>Cancel</button>
+      </div>
+    ) : null,
 }));
 
 jest.mock('../../categories/songs/components/SongEditDialog.js', () => ({
@@ -96,6 +135,14 @@ jest.mock('../SelectionModeBar.js', () => ({
 describe('CategoryScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseFilteredSongs.mockReturnValue({ data: [], isLoading: false, error: null });
+    mockUseLanguages.mockReturnValue({ data: [], isLoading: false, error: null });
+    mockUseSelectionCount.mockReturnValue(0);
+    mockUseSearchText.mockReturnValue('');
+    mockSortState = { sortKey: null, sortDirection: null };
+    mockColumnFilters = {};
+    mockSetSort.mockClear();
+    mockClearSort.mockClear();
   });
 
   it('CS-01: renders search bar with category placeholder', () => {
@@ -134,5 +181,89 @@ describe('CategoryScreen', () => {
     render(<CategoryScreen category={mockCategory} />);
     fireEvent.click(screen.getByText('New Song'));
     expect(screen.getByTestId('create-dialog')).toBeInTheDocument();
+  });
+
+  it('CS-07: error state displays error message', () => {
+    mockUseFilteredSongs.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: new Error('Database connection lost'),
+    });
+    render(<CategoryScreen category={mockCategory} />);
+    expect(screen.getByText('Database connection lost')).toBeInTheDocument();
+  });
+
+  it('CS-08: loading state shows loading indicator', () => {
+    mockUseFilteredSongs.mockReturnValue({ data: [], isLoading: true, error: null });
+    render(<CategoryScreen category={mockCategory} />);
+    expect(screen.getByTestId('loading-indicator')).toBeInTheDocument();
+  });
+
+  it('CS-09: FilterBar visible when column filters are active', () => {
+    mockColumnFilters = { language_id: ['en'] };
+    render(<CategoryScreen category={mockCategory} />);
+    expect(screen.getByTestId('filter-bar')).toBeInTheDocument();
+  });
+
+  it('CS-10: SelectionModeBar visible when selectionCount > 0', () => {
+    mockUseSelectionCount.mockReturnValue(3);
+    render(<CategoryScreen category={mockCategory} />);
+    expect(screen.getByTestId('selection-mode-bar')).toBeInTheDocument();
+    expect(screen.getByText('3 selected')).toBeInTheDocument();
+  });
+
+  it('CS-11: sort toggle cycles asc -> desc -> none', () => {
+    const { rerender } = render(<CategoryScreen category={mockCategory} />);
+
+    // Click 1: no current sort -> setSort('name', 'asc')
+    fireEvent.click(screen.getByText('Song Name'));
+    expect(mockSetSort).toHaveBeenCalledWith('name', 'asc');
+    expect(mockClearSort).not.toHaveBeenCalled();
+
+    mockSetSort.mockClear();
+    mockClearSort.mockClear();
+
+    // Simulate sort state update after first click and re-render
+    mockSortState = { sortKey: 'name', sortDirection: 'asc' };
+    rerender(<CategoryScreen category={mockCategory} />);
+
+    // Click 2: sortKey matches, sortDirection is 'asc' -> setSort('name', 'desc')
+    fireEvent.click(screen.getByText('Song Name'));
+    expect(mockSetSort).toHaveBeenCalledWith('name', 'desc');
+    expect(mockClearSort).not.toHaveBeenCalled();
+
+    mockSetSort.mockClear();
+    mockClearSort.mockClear();
+
+    // Simulate sort state update after second click and re-render
+    mockSortState = { sortKey: 'name', sortDirection: 'desc' };
+    rerender(<CategoryScreen category={mockCategory} />);
+
+    // Click 3: sortKey matches, sortDirection is 'desc' -> clearSort()
+    fireEvent.click(screen.getByText('Song Name'));
+    expect(mockClearSort).toHaveBeenCalled();
+    expect(mockSetSort).not.toHaveBeenCalled();
+  });
+
+  it('CS-12: create dialog cancel closes dialog', () => {
+    render(<CategoryScreen category={mockCategory} />);
+    fireEvent.click(screen.getByText('New Song'));
+    expect(screen.getByTestId('create-dialog')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(screen.queryByTestId('create-dialog')).not.toBeInTheDocument();
+  });
+
+  it('CS-13: rapid view toggle table -> tile -> table renders correct view', () => {
+    render(<CategoryScreen category={mockCategory} />);
+    expect(screen.getByTestId('table-view')).toBeInTheDocument();
+    expect(screen.queryByTestId('tile-view')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('Switch to tile view'));
+    expect(screen.getByTestId('tile-view')).toBeInTheDocument();
+    expect(screen.queryByTestId('table-view')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('Switch to table view'));
+    expect(screen.getByTestId('table-view')).toBeInTheDocument();
+    expect(screen.queryByTestId('tile-view')).not.toBeInTheDocument();
   });
 });
